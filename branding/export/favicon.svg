@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"><title>YouTube Uploader Pro</title><g transform="translate(-43.01 -43.01) scale(1.336)">
+  <title id="title-symbol-color">YouTube Uploader Pro — Master Symbol</title>
+  <defs>
+    <linearGradient id="crimson-grad" x1="128" y1="36" x2="128" y2="160" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF1A4B"/>
+      <stop offset="100%" stop-color="#E6002E"/>
+    </linearGradient>
+    <linearGradient id="chassis-grad" x1="128" y1="52" x2="128" y2="220" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#334155"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+  </defs>
+  <!-- Outer U-channel chassis (The Queue Tray) -->
+  <path fill="url(#chassis-grad)" fill-rule="evenodd" d="M36 84 L68 52 L68 164 A24 24 0 0 0 92 188 L164 188 A24 24 0 0 0 188 164 L188 52 L220 84 L220 164 A56 56 0 0 1 164 220 L92 220 A56 56 0 0 1 36 164 Z"/>
+  <!-- Center Ascending Vector (The Speed Rocket) -->
+  <path fill="url(#crimson-grad)" d="M128 36 L172 80 L144 80 L144 160 L112 160 L112 80 L84 80 Z"/>
+</g></svg>

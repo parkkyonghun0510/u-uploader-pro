@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 384" width="384" height="384" role="img" aria-labelledby="title-lockup-stacked">
+  <title id="title-lockup-stacked">YouTube Uploader Pro — Stacked Lockup</title>
+  <!-- Centered Symbol (scale 0.85, top aligned) -->
+  <g transform="translate(83, 28) scale(0.85)">
+    <path fill="#0F172A" fill-rule="evenodd" d="M36 84 L68 52 L68 164 A24 24 0 0 0 92 188 L164 188 A24 24 0 0 0 188 164 L188 52 L220 84 L220 164 A56 56 0 0 1 164 220 L92 220 A56 56 0 0 1 36 164 Z"/>
+    <path fill="#FF0033" d="M128 36 L172 80 L144 80 L144 160 L112 160 L112 80 L84 80 Z"/>
+  </g>
+  <!-- Stacked Wordmark -->
+  <!-- YT UPLOADER -->
+  <g transform="translate(68, 256) scale(0.42)" fill="#0F172A">
+    <!-- Y -->
+    <polygon points="0,0 30,30 30,84 50,84 50,30 80,0 58,0 40,18 22,0" fill="#FF0033"/>
+    <!-- T -->
+    <polygon points="88,0 132,0 132,20 120,20 120,84 100,84 100,20 88,20" fill="#FF0033"/>
+    <!-- Separator Dot -->
+    <rect x="144" y="36" width="12" height="12" rx="3" fill="#64748B"/>
+    <!-- UPLOADER -->
+    <path d="M172 0 L192 0 L192 58 A14 14 0 0 0 220 58 L220 0 L240 0 L240 58 A34 34 0 0 1 172 58 Z"/>
+    <path fill-rule="evenodd" d="M254 0 L288 0 A24 24 0 0 1 288 48 L274 48 L274 84 L254 84 Z M274 20 L286 20 A4 4 0 0 1 286 28 L274 28 Z"/>
+    <polygon points="322,0 342,0 342,64 370,64 370,84 322,84"/>
+    <path fill-rule="evenodd" d="M408 0 A42 42 0 1 1 407.9 0 Z M408 20 A22 22 0 1 0 408.1 20 Z"/>
+    <polygon points="474,0 496,0 518.5,84 496.5,84 490.5,62 479.5,62 473.5,84 451.5,84"/>
+    <path fill-rule="evenodd" d="M534 0 L560 0 A42 42 0 0 1 560 84 L534 84 Z M554 20 L560 20 A22 22 0 0 1 560 64 L554 64 Z"/>
+  </g>
+  <!-- Subtitle Tag (Clean outlined vector, zero live text) -->
+  <g transform="translate(132, 310)" fill="#FF0033">
+    <!-- P -->
+    <polygon points="16,4 28,4 28,14 22,14 22,22 16,22"/>
+    <!-- R -->
+    <polygon points="32,4 44,4 44,14 38,14 44,22 39,22 34,15 34,22 28,22 28,4"/>
+    <!-- O -->
+    <path fill-rule="evenodd" d="M56 4 A9 9 0 1 1 55.9 4 Z M56 8 A5 5 0 1 0 56.1 8 Z"/>
+    <!-- Dot -->
+    <rect x="70" y="11" width="4" height="4" fill="#64748B"/>
+    <!-- STUDIO -->
+    <polygon points="80,4 92,4 92,7 84,7 84,11 92,12 92,22 80,22 80,19 88,19 88,15 80,14" fill="#0F172A"/>
+    <polygon points="96,4 108,4 108,7 103,7 103,22 100,22 100,7 96,7" fill="#0F172A"/>
+  </g>
+</svg>

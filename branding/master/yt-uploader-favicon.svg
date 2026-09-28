@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title-fav">
+  <title id="title-fav">YouTube Uploader Pro Favicon</title>
+  <rect width="32" height="32" rx="7" fill="#07090E"/>
+  <!-- Scaled Kinetic YU symbol -->
+  <g transform="translate(4, 4) scale(0.09375)">
+    <path fill="#94A3B8" fill-rule="evenodd" d="M36 84 L68 52 L68 164 A24 24 0 0 0 92 188 L164 188 A24 24 0 0 0 188 164 L188 52 L220 84 L220 164 A56 56 0 0 1 164 220 L92 220 A56 56 0 0 1 36 164 Z"/>
+    <path fill="#FF0033" d="M128 36 L172 80 L144 80 L144 160 L112 160 L112 80 L84 80 Z"/>
+  </g>
+</svg>

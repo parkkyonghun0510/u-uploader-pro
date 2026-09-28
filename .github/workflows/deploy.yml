@@ -1,0 +1,69 @@
+name: CI/CD Pipeline & VPS Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    name: Lint & Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install flake8 pytest
+
+      - name: Python Syntax & Flake8 Check
+        run: |
+          # Stop build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv,.venv
+
+  deploy:
+    name: Deploy to Development Server
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: SSH Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          passphrase: ${{ secrets.VPS_SSH_PASSPHRASE }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            TARGET_DIR="${{ secrets.VPS_TARGET_DIR || '~/u-uploader-pro' }}"
+            echo "Deploying to $TARGET_DIR..."
+            
+            # Navigate to project directory
+            cd "$TARGET_DIR"
+            
+            # Pull latest changes from main
+            git fetch origin main
+            git reset --hard origin/main
+            
+            # Ensure runtime directories exist
+            mkdir -p profiles profile logs queue
+            
+            # Rebuild and restart Docker containers
+            docker compose down
+            docker compose build --pull
+            docker compose up -d
+            
+            # Cleanup old Docker images
+            docker image prune -f
+            
+            echo "Deployment successfully completed!"

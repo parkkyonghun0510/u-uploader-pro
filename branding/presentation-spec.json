@@ -1,0 +1,66 @@
+{
+  "brand": "YouTube Uploader Pro",
+  "tagline": "Automated Dispatch & Queue Pipeline",
+  "brief": "A modern, high-performance automated YouTube video uploader built with Selenium, featuring a real-time web command console, priority queue scheduling, multi-channel profile persistence, and auto-retry pipeline. Replaced the generic YouTube play button with an ownable, engineering-grade identifier.",
+  "adjectives": [
+    "velocity",
+    "automated",
+    "precision",
+    "streamlined",
+    "cyber-editorial"
+  ],
+  "criteria": "Success: immediate brand recognition (Y + U), distinct from passive YouTube play triangles, flawless 16px reproduction, robust one-color mode, and seamless integration with the dark-themed command console.",
+  "industry": "software",
+  "nav": [
+    "Dashboard",
+    "New Upload",
+    "Queue",
+    "Profiles",
+    "Settings"
+  ],
+  "brand_color": "#FF0033",
+  "tile_color": "#07090E",
+  "designer": "Antigravity Identity Design",
+  "round": 1,
+  "concepts": [
+    {
+      "name": "Kinetic YU",
+      "symbol": "master/yt-uploader-symbol.svg",
+      "lockup": "master/yt-uploader-lockup-dark.svg",
+      "idea": "Monolithic monogram merging Y (YouTube) + U (Uploader/Queue Tray) with an ascending velocity rocket.",
+      "rationale": [
+        "Embeds the brand initials (Y+U) directly in an iconic silhouette",
+        "Replaces passive video viewing with active upward momentum",
+        "Achieves 100/100 production score with exact 45° precision cuts",
+        "Tested down to 16px favicon with zero loss of silhouette clarity"
+      ]
+    },
+    {
+      "name": "Velocity Shutter",
+      "symbol": "concepts/concept-b-symbol.svg",
+      "lockup": "concepts/concept-b-lockup.svg",
+      "idea": "Precision octagonal studio lens aperture cycling continuously into an ascending playhead beacon.",
+      "rationale": [
+        "Evokes camera optics and continuous cyclic automation",
+        "Reflects the cyber-editorial aesthetic of the command console"
+      ]
+    },
+    {
+      "name": "Studio Launchpad",
+      "symbol": "concepts/concept-c-symbol.svg",
+      "lockup": "concepts/concept-c-lockup.svg",
+      "idea": "The YouTube video monitor frame transformed into a launch silo with a breakthrough rocket playhead.",
+      "rationale": [
+        "Draws upon recognizable screen equity with an explosive upward twist",
+        "Dual queue process wafers narrate the batch upload lifecycle"
+      ]
+    }
+  ],
+  "recommendation": "Kinetic YU — the most ownable, punchy, and scalable mark that instantly identifies the software across desktop, mobile, CLI terminal, and browser tab.",
+  "next_steps": [
+    "Direction approved: Kinetic YU",
+    "Production master files generated (flat, dark, light, stacked, mono, app-icon, favicon)",
+    "Dashboard interface integrated with the new brand mark",
+    "Brand guidelines and asset kit packaged"
+  ]
+}

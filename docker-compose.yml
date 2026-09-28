@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  uploader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: youtube_uploader_pro
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./profiles:/app/profiles
+      - ./profile:/app/profile
+      - ./logs:/app/logs
+      - ./queue:/app/queue
+    # Allocate shared memory for Firefox to avoid browser crashes in Docker
+    shm_size: '2gb'
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PORT=8080
+      - FLASK_ENV=production

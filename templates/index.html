@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Uploader Pro — Studio Command Console</title>
+    <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap"
+        rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <!-- Favicon & Web App Icons -->
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.svg') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
+    <!-- Main Style -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Socket.IO & Chart.js -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body class="dark-theme">
+    <!-- Ambient Studio Mesh Orbs -->
+    <div class="ambient-glow ambient-glow-1"></div>
+    <div class="ambient-glow ambient-glow-2"></div>
+    <div class="ambient-grid-overlay"></div>
+
+    <!-- Dedicated Authentication Portal View -->
+    <div id="authScreen" class="auth-screen" style="display: none;">
+        <div class="auth-container">
+            <div class="auth-brand">
+                <div class="auth-brand-icon">
+                    <img src="{{ url_for('static', filename='img/logo-white.svg') }}" alt="YouTube Uploader Pro" class="brand-svg-logo">
+                </div>
+                <h1 class="auth-brand-title">YT Uploader Pro</h1>
+                <p class="auth-brand-subtitle">Automated YouTube Studio & Channel Cloud Engine</p>
+                <div class="auth-engine-pill">
+                    <span class="status-beacon"></span>
+                    <span>SUPABASE CLOUD AUTH RUNTIME</span>
+                </div>
+            </div>
+
+            <div class="auth-card" id="authCard">
+                <!-- Segmented Tabs Switcher -->
+                <div class="auth-tabs" role="tablist">
+                    <button type="button" class="auth-tab active" id="tabSignIn" role="tab" aria-selected="true">
+                        <i class="fas fa-sign-in-alt"></i> <span>Sign In</span>
+                    </button>
+                    <button type="button" class="auth-tab" id="tabSignUp" role="tab" aria-selected="false">
+                        <i class="fas fa-user-plus"></i> <span>Create Account</span>
+                    </button>
+                </div>
+
+                <!-- Alert Messages -->
+                <div id="authAlert" class="auth-alert" style="display: none;">
+                    <i class="auth-alert-icon fas fa-exclamation-circle" id="authAlertIcon"></i>
+                    <div class="auth-alert-message" id="authAlertMessage"></div>
+                </div>
+
+                <!-- Auth Form -->
+                <form id="authForm" onsubmit="return false;" novalidate>
+                    <!-- Display Name (Sign Up only) -->
+                    <div class="form-group auth-field" id="authDisplayNameGroup" style="display: none;">
+                        <label for="authDisplayName">Display Name</label>
+                        <div class="input-with-icon">
+                            <i class="fas fa-user input-icon"></i>
+                            <input type="text" id="authDisplayName" placeholder="e.g. Creator Studio"
+                                autocomplete="name">
+                        </div>
+                    </div>
+
+                    <!-- Email Field -->
+                    <div class="form-group auth-field">
+                        <label for="authEmail">Email Address</label>
+                        <div class="input-with-icon">
+                            <i class="fas fa-envelope input-icon"></i>
+                            <input type="email" id="authEmail" placeholder="you@domain.com" required
+                                autocomplete="email">
+                        </div>
+                    </div>
+
+                    <!-- Password Field -->
+                    <div class="form-group auth-field" id="authPasswordGroup">
+                        <div class="field-label-row">
+                            <label for="authPassword" id="authPasswordLabel">Password</label>
+                            <span class="password-hint" id="passwordHint" style="display: none;">Min. 8
+                                characters</span>
+                            <a href="#" id="authForgotLink" class="auth-forgot-link">Forgot password?</a>
+                        </div>
+                        <div class="input-with-icon">
+                            <i class="fas fa-lock input-icon"></i>
+                            <input type="password" id="authPassword" placeholder="••••••••" required
+                                autocomplete="current-password">
+                            <button type="button" class="btn-password-toggle" id="btnTogglePassword"
+                                title="Show/Hide Password" aria-label="Toggle Password Visibility">
+                                <i class="fas fa-eye" id="togglePasswordIcon"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button type="submit" id="authSubmitBtn" class="btn btn-primary auth-submit-btn">
+                        <span id="authSubmitText">Sign In</span>
+                        <i class="fas fa-arrow-right" id="authSubmitIcon"></i>
+                    </button>
+                </form>
+
+                <!-- Footer Switcher Helper -->
+                <div class="auth-footer-prompt">
+                    <span id="authPromptText">Don't have an account yet?</span>
+                    <button type="button" class="auth-switch-btn" id="authSwitchBtn">Create an account</button>
+                </div>
+
+                <!-- Supabase Cloud Indicator -->
+                <div class="auth-cloud-status">
+                    <span class="status-beacon"></span>
+                    <span>Supabase Auth Cloud Engine Active</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application Console -->
+    <div id="app" style="display: none;">
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <div class="logo-icon-wrap">
+                        <img src="{{ url_for('static', filename='img/logo-white.svg') }}" alt="YouTube Uploader Pro" class="brand-svg-icon">
+                    </div>
+                    <div class="logo-text-group">
+                        <span class="logo-title">YT UPLOADER</span>
+                        <span class="logo-badge">PRO v2.5</span>
+                    </div>
+                </div>
+                <button class="sidebar-toggle" id="sidebarToggle" aria-label="Close Sidebar"><i
+                        class="fas fa-times"></i></button>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item active" data-page="dashboard">
+                    <i class="fas fa-th-large"></i><span>Dashboard</span>
+                </li>
+                <li class="nav-item" data-page="upload">
+                    <i class="fas fa-plus-circle"></i><span>New Upload</span>
+                </li>
+                <li class="nav-item" data-page="queue">
+                    <i class="fas fa-list-ol"></i><span>Queue</span>
+                    <span class="badge" id="queueBadge">0</span>
+                </li>
+                <li class="nav-item" data-page="history">
+                    <i class="fas fa-history"></i><span>History</span>
+                </li>
+                <li class="nav-item" data-page="profiles">
+                    <i class="fas fa-user-cog"></i><span>Profiles</span>
+                </li>
+                <li class="nav-item" data-page="settings">
+                    <i class="fas fa-cog"></i><span>Settings</span>
+                </li>
+                <li class="nav-item" data-page="channels">
+                    <i class="fas fa-broadcast-tower"></i><span>Channels</span>
+                </li>
+            </ul>
+            <div class="sidebar-footer">
+                <div class="connection-status" id="connectionStatus">
+                    <span class="status-dot"></span> <span class="status-text">Connected</span>
+                </div>
+                <div class="system-time-stamp" id="systemTimeStamp">LIVE STREAM READY</div>
+            </div>
+        </nav>
+        <!-- Mobile Sidebar Backdrop Overlay -->
+        <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="top-bar-left">
+                    <button class="topbar-toggle btn-icon" id="topbarToggle" aria-label="Open Navigation Menu">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="title-with-pill">
+                        <h1 class="page-title" id="pageTitle">Dashboard</h1>
+                        <div class="studio-status-pill">
+                            <span class="pulse-beacon live"></span>
+                            <span class="status-label">Studio Active</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="top-bar-actions">
+                    <button class="btn btn-icon" id="refreshBtn" title="Refresh Dashboard"><i
+                            class="fas fa-sync-alt"></i></button>
+                    <button class="btn btn-icon" id="supabaseSyncBtn" title="Sync to Supabase"><i
+                            class="fas fa-cloud-upload-alt"></i></button>
+                    <button class="btn btn-primary" id="newUploadBtn"><i class="fas fa-plus"></i> <span>New
+                            Upload</span></button>
+                    <div id="userBadge" class="user-badge-pill" style="display:none;">
+                        <div class="user-avatar-ring"><i class="fas fa-user-circle"></i></div>
+                        <span id="userName" class="user-name-text"></span>
+                        <button class="btn btn-sm btn-logout" id="logoutBtn" title="Log out"><i
+                                class="fas fa-sign-out-alt"></i></button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dashboard Section -->
+            <section class="content-section" id="dashboardPage">
+                <div class="stats-grid">
+                    <div class="stat-card stat-blue">
+                        <div class="stat-glow"></div>
+                        <div class="stat-icon bg-blue"><i class="fas fa-upload"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="totalUploaded">0</span>
+                            <span class="stat-label">Total Uploaded</span>
+                        </div>
+                        <div class="stat-meta"><i class="fas fa-layer-group"></i> All Time</div>
+                    </div>
+                    <div class="stat-card stat-green">
+                        <div class="stat-glow"></div>
+                        <div class="stat-icon bg-green"><i class="fas fa-check-circle"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="completedCount">0</span>
+                            <span class="stat-label">Completed</span>
+                        </div>
+                        <div class="stat-meta"><i class="fas fa-arrow-up"></i> Successful</div>
+                    </div>
+                    <div class="stat-card stat-orange">
+                        <div class="stat-glow"></div>
+                        <div class="stat-icon bg-orange"><i class="fas fa-spinner"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="activeCount">0</span>
+                            <span class="stat-label">Active</span>
+                        </div>
+                        <div class="stat-meta"><i class="fas fa-bolt"></i> Processing</div>
+                    </div>
+                    <div class="stat-card stat-red">
+                        <div class="stat-glow"></div>
+                        <div class="stat-icon bg-red"><i class="fas fa-times-circle"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="failedCount">0</span>
+                            <span class="stat-label">Failed</span>
+                        </div>
+                        <div class="stat-meta"><i class="fas fa-shield-alt"></i> Retries</div>
+                    </div>
+                    <div class="stat-card stat-purple">
+                        <div class="stat-glow"></div>
+                        <div class="stat-icon bg-purple"><i class="fas fa-cloud"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="supabaseStatus">🔴</span>
+                            <span class="stat-label">Supabase</span>
+                        </div>
+                        <div class="stat-meta"><i class="fas fa-database"></i> Cloud Sync</div>
+                    </div>
+                </div>
+
+                <div id="supabasePanel" class="supabase-sync-panel hidden" style="display:none;">
+                    <div class="sync-panel-header">
+                        <i class="fas fa-database sync-icon"></i>
+                        <span class="sync-title">Supabase Cloud Engine:</span>
+                        <span class="status-badge status-sync-badge">Synchronized</span>
+                        <span id="supabaseProfile" class="sync-profile"></span>
+                    </div>
+                    <div class="sync-panel-actions">
+                        <button class="btn btn-sm btn-primary" onclick="syncToSupabase()"><i class="fas fa-sync"></i>
+                            Sync Now</button>
+                        <button class="btn btn-sm btn-secondary" onclick="loadSupabaseStats()"><i
+                                class="fas fa-chart-bar"></i> Stats</button>
+                        <button class="btn btn-sm btn-secondary" onclick="requestSupabaseSync()"><i
+                                class="fas fa-database"></i> Full Sync</button>
+                    </div>
+                </div>
+                <div id="supabaseStats" class="hidden" style="display:none;"></div>
+
+                <!-- Add Account Modal -->
+                <div id="addAccountModal" class="hidden" style="display:none;">
+                    <div class="card modal-dialog-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-plus-circle text-primary"></i> Add Account</h3>
+                            <button class="btn btn-sm btn-icon" onclick="closeAddAccountModal()"><i
+                                    class="fas fa-times"></i></button>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label class="form-label">Email</label>
+                                <input type="email" id="accEmail" class="form-control" placeholder="your@email.com">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Display Name</label>
+                                <input type="text" id="accName" class="form-control" placeholder="Your name">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Account Type</label>
+                                <select id="accType" class="form-control">
+                                    <option value="personal">Personal</option>
+                                    <option value="brand">Brand</option>
+                                    <option value="business">Business</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-primary" onclick="addAccount()" style="width:100%;"><i
+                                    class="fas fa-plus"></i> Add Account</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="card chart-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-chart-line header-icon"></i> Upload Progress</h3>
+                            <span class="card-header-badge">Live Metric</span>
+                        </div>
+                        <div class="card-body chart-body">
+                            <canvas id="progressChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card activity-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-bolt header-icon"></i> Recent Activity</h3>
+                            <span class="card-header-badge">Real-time Stream</span>
+                        </div>
+                        <div class="card-body" id="recentActivity">
+                            <p class="text-muted">No activity yet</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Upload Page -->
+            <section class="content-section hidden" id="uploadPage">
+                <div class="card upload-studio-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-cloud-upload-alt text-primary"></i> Video Upload Studio</h3>
+                        <span class="card-header-badge">Studio Automation</span>
+                    </div>
+                    <div class="card-body">
+                        <form id="uploadForm" class="upload-form">
+                            <div class="form-group">
+                                <label class="form-label">Video File <span class="text-danger">*</span></label>
+                                <div class="file-input-wrapper dropzone-main">
+                                    <input type="file" id="videoFile" accept="video/*" required>
+                                    <div class="file-input-display" id="videoFileDisplay">
+                                        <div class="dropzone-icon-ring">
+                                            <i class="fas fa-film"></i>
+                                        </div>
+                                        <div class="dropzone-text-group">
+                                            <span class="dropzone-title">Click or drag video file here</span>
+                                            <span class="dropzone-subtitle">High bitrate MP4, MOV, MKV, AVI
+                                                supported</span>
+                                        </div>
+                                        <div class="dropzone-format-tags">
+                                            <span class="format-tag">MP4</span>
+                                            <span class="format-tag">MOV</span>
+                                            <span class="format-tag">MKV</span>
+                                            <span class="format-tag">4K / 60FPS</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <small class="form-help">Supported containers: MP4, MOV, AVI, MKV. Maximum file size
+                                    according to YouTube Studio quota.</small>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Metadata Configuration (JSON)</label>
+                                    <div class="file-input-wrapper">
+                                        <input type="file" id="metaFile" accept=".json">
+                                        <div class="file-input-display" id="metaFileDisplay">
+                                            <i class="fas fa-file-code"></i>
+                                            <span>Optional metadata JSON file</span>
+                                        </div>
+                                    </div>
+                                    <small class="form-help">Preload title, tags, description and category from
+                                        JSON.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Custom Video Thumbnail</label>
+                                    <div class="file-input-wrapper">
+                                        <input type="file" id="thumbFile" accept="image/*">
+                                        <div class="file-input-display" id="thumbFileDisplay">
+                                            <i class="fas fa-image"></i>
+                                            <span>Optional 16:9 thumbnail image</span>
+                                        </div>
+                                    </div>
+                                    <small class="form-help">Recommended 1280x720 PNG or JPG (under 2MB).</small>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Scheduled Publish Time</label>
+                                    <div class="input-with-icon">
+                                        <i class="fas fa-calendar-alt input-icon"></i>
+                                        <input type="text" id="scheduleInput" class="form-control"
+                                            placeholder="MM/DD/YYYY, HH:MM (optional)">
+                                    </div>
+                                    <small class="form-help">e.g., 06/15/2026, 14:30 (leave blank for immediate
+                                        upload)</small>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Queue Priority</label>
+                                    <div class="input-with-icon">
+                                        <i class="fas fa-flag input-icon"></i>
+                                        <select id="priorityInput" class="form-control">
+                                            <option value="low">Low Priority</option>
+                                            <option value="normal" selected>Normal Priority</option>
+                                            <option value="high">High Priority (Expedited)</option>
+                                        </select>
+                                    </div>
+                                    <small class="form-help">High priority jobs preempt queue position.</small>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Metadata Preview</label>
+                                <div id="metaPreview" class="meta-preview">
+                                    <div class="preview-terminal-header">
+                                        <span class="term-dot red"></span>
+                                        <span class="term-dot yellow"></span>
+                                        <span class="term-dot green"></span>
+                                        <span class="term-title">metadata_schema.json</span>
+                                    </div>
+                                    <p class="text-muted preview-placeholder">Load a metadata file to inspect attributes
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary btn-lg">
+                                    <i class="fas fa-upload"></i> Start Upload Task
+                                </button>
+                                <button type="button" class="btn btn-secondary" id="cancelUploadBtn">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Queue Page -->
+            <section class="content-section hidden" id="queuePage">
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-list-ol text-primary"></i> Upload Processing Queue</h3>
+                        <div class="card-actions">
+                            <button class="btn btn-sm btn-outline" id="refreshQueue" title="Refresh Queue"><i
+                                    class="fas fa-sync"></i> Refresh</button>
+                            <button class="btn btn-sm btn-outline" id="clearCompleted"><i class="fas fa-trash-alt"></i>
+                                Clear Completed</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="queue-filters">
+                            <button class="filter-btn active" data-filter="all"><i class="fas fa-stream"></i> All
+                                Jobs</button>
+                            <button class="filter-btn" data-filter="pending"><i class="fas fa-clock"></i>
+                                Pending</button>
+                            <button class="filter-btn" data-filter="in_progress"><i class="fas fa-spinner fa-spin"></i>
+                                Uploading</button>
+                            <button class="filter-btn" data-filter="completed"><i class="fas fa-check"></i>
+                                Done</button>
+                            <button class="filter-btn" data-filter="failed"><i class="fas fa-exclamation-triangle"></i>
+                                Failed</button>
+                        </div>
+                        <div class="queue-list" id="queueList">
+                            <p class="text-muted">Queue is empty</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- History Page -->
+            <section class="content-section hidden" id="historyPage">
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-history text-primary"></i> Upload Archive & History</h3>
+                        <div class="card-actions">
+                            <button class="btn btn-sm btn-outline" id="refreshHistory" title="Refresh History"><i
+                                    class="fas fa-sync"></i> Refresh</button>
+                        </div>
+                    </div>
+                    <div class="card-body table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Video Asset</th>
+                                    <th>Status</th>
+                                    <th>Video ID</th>
+                                    <th>Date Created</th>
+                                    <th>Progress Metric</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody">
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted">No history available</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Profiles Page -->
+            <section class="content-section hidden" id="profilesPage">
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-user-cog text-primary"></i> Automation Profiles</h3>
+                        <button class="btn btn-primary btn-sm" id="addProfileBtn"><i class="fas fa-plus"></i> Add
+                            Profile</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="profiles-grid" id="profilesGrid">
+                            <p class="text-muted">No profiles saved yet</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings Page -->
+            <section class="content-section hidden" id="settingsPage">
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-cog text-primary"></i> Studio Engine Settings</h3>
+                        <span class="card-header-badge">Core Config</span>
+                    </div>
+                    <div class="card-body">
+                        <form id="settingsForm" class="settings-form">
+                            <div class="form-group">
+                                <label class="form-label">Upload Storage Directory</label>
+                                <div class="input-with-icon">
+                                    <i class="fas fa-folder input-icon"></i>
+                                    <input type="text" id="uploadDir" class="form-control"
+                                        placeholder="/path/to/videos">
+                                </div>
+                                <small class="form-help">Absolute path on the host system to stage raw media
+                                    assets.</small>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Max Retries</label>
+                                    <input type="number" id="maxRetries" class="form-control" min="1" max="10"
+                                        value="3">
+                                    <small class="form-help">Maximum auto-retries on network timeout.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Retry Delay (seconds)</label>
+                                    <input type="number" id="retryDelay" class="form-control" min="5" max="300"
+                                        value="10">
+                                    <small class="form-help">Backoff delay before restarting upload.</small>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Interface Theme</label>
+                                <select id="themeSelect" class="form-control">
+                                    <option value="dark">Obsidian Studio (Dark Mode)</option>
+                                    <option value="light">Porcelain Executive (Light Mode)</option>
+                                </select>
+                            </div>
+                            <div class="settings-toggle-row">
+                                <div class="toggle-info">
+                                    <strong>Automated Session Login</strong>
+                                    <p>Preserve Chrome session cookies for seamless background sign-in.</p>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="autoLogin">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="settings-toggle-row">
+                                <div class="toggle-info">
+                                    <strong>Real-time Desktop Notifications</strong>
+                                    <p>Broadcast completion and error notifications via WebSocket.</p>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="notifications" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-save-settings"><i class="fas fa-save"></i>
+                                Save Studio Settings</button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Channel Management Page -->
+            <section class="content-section hidden" id="channelsPage">
+                <div class="tabs" id="channelTabs">
+                    <div class="tab active" data-tab="accounts"><i class="fas fa-user"></i> <span>Accounts</span></div>
+                    <div class="tab" data-tab="channels"><i class="fas fa-tv"></i> <span>My Channels</span></div>
+                    <div class="tab" data-tab="templates"><i class="fas fa-layer-group"></i> <span>Templates</span>
+                    </div>
+                    <div class="tab" data-tab="bulk"><i class="fas fa-cubes"></i> <span>Bulk Upload</span></div>
+                    <div class="tab" data-tab="youtube"><i class="fab fa-youtube"></i> <span>YouTube API</span></div>
+                </div>
+
+                <!-- Accounts Tab -->
+                <div id="accountsTab">
+                    <div class="tab-action-bar">
+                        <div>
+                            <h2 class="tab-heading">YouTube Accounts <span class="tab-subheading">(Multi-Channel Fleet Command)</span></h2>
+                        </div>
+                        <div class="action-buttons-group">
+                            <button class="btn btn-secondary" id="refreshAccountsBtn" onclick="loadAccounts()"><i
+                                    class="fas fa-sync-alt"></i> Refresh Status</button>
+                            <button class="btn btn-primary" id="addAccountBtn" onclick="openAddAccountModal()"><i
+                                    class="fas fa-plus"></i> Add Account</button>
+                        </div>
+                    </div>
+
+                    <!-- Dual-Engine Connection Command Hub -->
+                    <div class="connection-hub-grid">
+                        <!-- Engine 1: Selenium Studio Automation -->
+                        <div class="engine-card studio-engine-card">
+                            <div class="engine-card-header">
+                                <div class="engine-title-group">
+                                    <div class="engine-icon-ring studio-ring">
+                                        <i class="fas fa-film"></i>
+                                    </div>
+                                    <div>
+                                        <div class="engine-badge-tag">Engine 1 • Direct Upload Automation</div>
+                                        <h3 class="engine-name">YouTube Studio Browser Session</h3>
+                                    </div>
+                                </div>
+                                <span class="engine-status-pill status-pill-loading" id="studioSessionStatus">
+                                    <span class="status-dot"></span> Checking session...
+                                </span>
+                            </div>
+                            <p class="engine-description">
+                                Directly controls Firefox to upload videos into YouTube Studio. Bypasses Google API daily quota limits and handles full-length 4K videos.
+                            </p>
+                            
+                            <div class="engine-cmd-box">
+                                <div class="engine-cmd-header">
+                                    <span class="engine-cmd-label"><i class="fas fa-terminal"></i> One-Time Terminal Sign-in</span>
+                                    <button type="button" class="btn-copy-chip" onclick="copyLoginCommand()">
+                                        <i class="fas fa-copy"></i> Copy
+                                    </button>
+                                </div>
+                                <code id="loginCliCommand" class="engine-code">python upload.py --login --profile default</code>
+                            </div>
+
+                            <div class="engine-actions-row">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="openBrowserLoginModal()">
+                                    <i class="fas fa-cookie-bite"></i> Session Profiles Guide
+                                </button>
+                                <div class="engine-meta-text" id="detectedProfilesSummary">
+                                    <i class="fas fa-folder-open text-muted"></i> Scanning profiles...
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Engine 2: Google Cloud Data API (OAuth 2.0) -->
+                        <div class="engine-card oauth-engine-card">
+                            <div class="engine-card-header">
+                                <div class="engine-title-group">
+                                    <div class="engine-icon-ring oauth-ring">
+                                        <i class="fab fa-google"></i>
+                                    </div>
+                                    <div>
+                                        <div class="engine-badge-tag">Engine 2 • Official Google Cloud API</div>
+                                        <h3 class="engine-name">YouTube Data API v3 & OAuth 2.0</h3>
+                                    </div>
+                                </div>
+                                <span class="engine-status-pill status-pill-loading" id="oauthEngineStatus">
+                                    <span class="status-dot"></span> Checking client...
+                                </span>
+                            </div>
+                            <p class="engine-description">
+                                Official Google OAuth connection to sync channel metrics, subscriber statistics, avatars, and cloud state across your fleet via Supabase.
+                            </p>
+
+                            <div class="engine-cmd-box">
+                                <div class="engine-cmd-header">
+                                    <span class="engine-cmd-label"><i class="fas fa-link"></i> Authorized Redirect URI</span>
+                                    <button type="button" class="btn-copy-chip" onclick="copyRedirectUri()">
+                                        <i class="fas fa-copy"></i> Copy
+                                    </button>
+                                </div>
+                                <code id="hubRedirectUriDisplay" class="engine-code">http://localhost:8080/api/youtube/oauth/callback</code>
+                            </div>
+
+                            <div class="engine-actions-row">
+                                <button type="button" class="btn btn-primary btn-sm btn-google-hub" id="connectGoogleBtn" onclick="connectGoogle()">
+                                    <i class="fab fa-google"></i> Connect with Google
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="openConfigOAuthModal()">
+                                    <i class="fas fa-cog"></i> Configure Credentials
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Fleet Section Header -->
+                    <div class="fleet-section-header">
+                        <h3 class="fleet-title"><i class="fas fa-users-cog text-primary"></i> Connected Channel Fleet</h3>
+                        <span class="badge badge-neutral" id="accountCountBadge">0 Accounts</span>
+                    </div>
+
+                    <div class="channel-list" id="accountsList">
+                        <div class="empty-state">
+                            <div class="empty-icon-ring"><i class="fab fa-google"></i></div>
+                            <h3>No accounts connected</h3>
+                            <p>Use Engine 1 or Engine 2 above to connect your channel fleet.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Channels Tab -->
+                <div id="channelsTab" class="hidden">
+                    <div class="tab-action-bar">
+                        <h2 class="tab-heading">My Channels</h2>
+                        <button class="btn btn-primary" id="addChannelBtn"><i class="fas fa-plus"></i> Add
+                            Channel</button>
+                    </div>
+                    <div class="channel-list" id="channelsList">
+                        <div class="empty-state">
+                            <div class="empty-icon-ring"><i class="fas fa-tv"></i></div>
+                            <h3>No channels configured</h3>
+                            <p>Connect a YouTube channel from your authenticated accounts.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Templates Tab -->
+                <div id="templatesTab" class="hidden">
+                    <div class="tab-action-bar">
+                        <h2 class="tab-heading">Metadata Templates</h2>
+                        <button class="btn btn-primary" id="addTemplateBtn"><i class="fas fa-plus"></i> New
+                            Template</button>
+                    </div>
+                    <div class="template-list" id="templatesList">
+                        <div class="empty-state">
+                            <div class="empty-icon-ring"><i class="fas fa-layer-group"></i></div>
+                            <h3>No templates yet</h3>
+                            <p>Create templates to standardize titles, descriptions, and tags across uploads.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bulk Upload Tab -->
+                <div id="bulkTab" class="hidden">
+                    <div class="tab-action-bar">
+                        <h2 class="tab-heading">Bulk Upload Orchestrator</h2>
+                    </div>
+                    <div class="card" style="margin-bottom:24px;">
+                        <div class="card-body">
+                            <h4 style="margin-bottom:16px; font-weight:700;"><i class="fas fa-boxes text-primary"></i>
+                                Create Batch Upload</h4>
+                            <form id="bulkUploadForm">
+                                <div class="form-group">
+                                    <label class="form-label">Batch Name</label>
+                                    <input type="text" id="batchName" class="form-control"
+                                        placeholder="e.g., Q4 Tutorial Master Series">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Target Channel</label>
+                                    <select id="batchChannel" class="form-control">
+                                        <option value="">Select channel</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Video Files (add multiple)</label>
+                                    <div id="batchVideoList" class="video-list">
+                                        <p class="text-muted">No files added yet</p>
+                                    </div>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="addBatchVideos"><i
+                                            class="fas fa-plus"></i> Add Videos to Batch</button>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="form-label">Metadata Template</label>
+                                        <select id="batchTemplate" class="form-control">
+                                            <option value="">No template</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Execution Priority</label>
+                                        <select id="batchPriority" class="form-control">
+                                            <option value="low">Low</option>
+                                            <option value="normal" selected>Normal</option>
+                                            <option value="high">High</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary"><i class="fas fa-upload"></i>
+                                    Create Batch Workflow</button>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-history text-primary"></i> Batch History</h3>
+                        </div>
+                        <div class="card-body">
+                            <div id="batchList">
+                                <p class="text-muted">No batch uploads yet</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- YouTube API Tab -->
+                <div id="youtubeTab" class="hidden">
+                    <div class="youtube-api-section">
+                        <h4><i class="fab fa-youtube text-primary"></i> YouTube Data API v3</h4>
+                        <p class="text-muted" style="margin-bottom:16px;">Connect your official Google Cloud YouTube
+                            Data API key to manage channels, query subscriber analytics, and inspect videos
+                            programmatically.</p>
+                        <div class="api-key-input">
+                            <input type="text" id="apiKeyInput" class="form-control"
+                                placeholder="Enter your YouTube Data API Key...">
+                            <button class="btn btn-primary" id="saveApiKey"><i class="fas fa-key"></i> Save API
+                                Key</button>
+                        </div>
+                        <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+                            <button class="btn btn-secondary" id="loadMyChannels"><i class="fas fa-tv"></i> Load My
+                                Channels</button>
+                            <button class="btn btn-secondary" id="searchYouTube"><i class="fas fa-search"></i> Search
+                                Videos</button>
+                        </div>
+                        <div id="youtubeResults">
+                            <p class="text-muted">Click a button above to query live YouTube data</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- General Purpose Modal -->
+        <div class="modal-overlay" id="modalOverlay">
+            <div class="modal" id="modal">
+                <div class="modal-header">
+                    <h3 id="modalTitle">Details</h3>
+                    <button class="modal-close" id="modalClose" aria-label="Close Modal"><i
+                            class="fas fa-times"></i></button>
+                </div>
+                <div class="modal-body" id="modalBody"></div>
+                <div class="modal-footer" id="modalFooter"></div>
+            </div>
+        </div>
+
+        <!-- Toast Notifications Stack -->
+        <div class="toast-container" id="toastContainer"></div>
+    </div>
+
+    <!-- Application Script (ES Module) -->
+    <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+
+</html>

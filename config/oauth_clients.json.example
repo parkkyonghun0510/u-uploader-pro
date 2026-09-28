@@ -1,0 +1,8 @@
+{
+  "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com": {
+    "client_id": "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com",
+    "client_secret": "YOUR_GOOGLE_CLIENT_SECRET",
+    "name": "Default Channel",
+    "created_at": "2026-09-28T00:00:00.000000"
+  }
+}

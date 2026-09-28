@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title-c">
+  <title id="title-c">Studio Launchpad Symbol - YouTube Uploader Pro</title>
+  <!-- Outer Video Console Chassis with Top Launch Port -->
+  <path fill="#111111" fill-rule="evenodd" d="M84 44 A44 44 0 0 0 32 88 L32 176 A44 44 0 0 0 76 220 L180 220 A44 44 0 0 0 224 176 L224 88 A44 44 0 0 0 172 44 L172 76 A16 16 0 0 1 192 96 L192 168 A16 16 0 0 1 176 184 L80 184 A16 16 0 0 1 64 168 L64 96 A16 16 0 0 1 84 76 Z"/>
+  <!-- Elevating Supersonic Playhead Vector -->
+  <path fill="#111111" d="M128 36 L172 80 L144 80 L144 152 L112 152 L112 80 L84 80 Z"/>
+  <!-- Batch Queue Process Wafers -->
+  <rect x="80" y="112" width="20" height="32" rx="4" fill="#111111"/>
+  <rect x="156" y="112" width="20" height="32" rx="4" fill="#111111"/>
+</svg>

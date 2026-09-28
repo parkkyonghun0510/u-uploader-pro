@@ -1,0 +1,33 @@
+{
+  "projectRef": "aisbzppswxqknjvntaaa",
+  "supabaseUrl": "https://aisbzppswxqknjvntaaa.supabase.co",
+  "supabaseKey": "sb_publishable__LERUIuVlqzUksHA3-AU3g_GSW-YxoE",
+  "anonKey": "sb_publishable__LERUIuVlqzUksHA3-AU3g_GSW-YxoE",
+  "serviceRoleKey": "",
+  "jwksUrl": "https://aisbzppswxqknjvntaaa.supabase.co/auth/v1/.well-known/jwks.json",
+  "database": {
+    "schemas": ["public"],
+    "tables": {
+      "accounts": "accounts",
+      "channels": "channels",
+      "upload_jobs": "upload_jobs",
+      "metadata_templates": "metadata_templates",
+      "bulk_batches": "bulk_batches",
+      "upload_history": "upload_history",
+      "notifications": "notifications",
+      "settings": "settings"
+    }
+  },
+  "storage": {
+    "buckets": {
+      "videos": "videos",
+      "thumbnails": "thumbnails",
+      "metadata": "metadata"
+    }
+  },
+  "edge_functions": {
+    "upload_handler": "upload-handler",
+    "realtime_subscriptions": "realtime-subscriptions",
+    "batch_processor": "batch-processor"
+  }
+}

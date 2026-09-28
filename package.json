@@ -1,0 +1,15 @@
+{
+  "name": "youtube-uploader-pro",
+  "version": "2.0.0",
+  "description": "Modern YouTube video uploader with web dashboard",
+  "main": "upload.py",
+  "scripts": {
+    "start": "python upload.py --web",
+    "start:port": "python upload.py --web --port 8080",
+    "cli": "python upload.py",
+    "status": "python upload.py --status",
+    "dev": "pip install -r requirements.txt && python upload.py --web"
+  },
+  "keywords": ["youtube", "upload", "selenium", "video"],
+  "license": "MIT"
+}

@@ -1,0 +1,7 @@
+{
+  "max_retries": "3",
+  "retry_delay": "10",
+  "theme": "dark",
+  "auto_login": false,
+  "notifications": true
+}

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"><title>YouTube Uploader Pro</title><g transform="translate(4.56 95.49) scale(0.254)">
+  <title id="title-lockup-dark">YouTube Uploader Pro — Dark Console Lockup</title>
+  <defs>
+    <linearGradient id="ld-crimson" x1="128" y1="36" x2="128" y2="160" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF2A55"/>
+      <stop offset="100%" stop-color="#E6002E"/>
+    </linearGradient>
+  </defs>
+  <!-- Symbol -->
+  <g id="symbol" transform="translate(26, 0)">
+    <path fill="#475569" fill-rule="evenodd" d="M36 84 L68 52 L68 164 A24 24 0 0 0 92 188 L164 188 A24 24 0 0 0 188 164 L188 52 L220 84 L220 164 A56 56 0 0 1 164 220 L92 220 A56 56 0 0 1 36 164 Z"/>
+    <path fill="url(#ld-crimson)" d="M128 36 L172 80 L144 80 L144 160 L112 160 L112 80 L84 80 Z"/>
+  </g>
+  <!-- Brand Heading -->
+  <g id="brand-text" fill="#F8FAFC" transform="translate(-26, 0)">
+    <!-- Y -->
+    <polygon points="334,80 364,110 364,164 384,164 384,110 414,80 392,80 374,98 356,80" fill="#FF0033"/>
+    <!-- T -->
+    <polygon points="422,80 466,80 466,100 454,100 454,164 434,164 434,100 422,100" fill="#FF0033"/>
+    <!-- Separator Dot -->
+    <rect x="478" y="116" width="12" height="12" rx="3" fill="#64748B"/>
+    <!-- UPLOADER -->
+    <!-- U -->
+    <path d="M506 80 L526 80 L526 138 A14 14 0 0 0 554 138 L554 80 L574 80 L574 138 A34 34 0 0 1 506 138 Z"/>
+    <!-- P -->
+    <path fill-rule="evenodd" d="M588 80 L622 80 A24 24 0 0 1 622 128 L608 128 L608 164 L588 164 Z M608 100 L620 100 A4 4 0 0 1 620 108 L608 108 Z"/>
+    <!-- L -->
+    <polygon points="656,80 676,80 676,144 704,144 704,164 656,164"/>
+    <!-- O -->
+    <path fill-rule="evenodd" d="M742 80 A42 42 0 1 1 741.9 80 Z M742 100 A22 22 0 1 0 742.1 100 Z"/>
+    <!-- A -->
+    <polygon points="808,80 830,80 852.5,164 830.5,164 824.5,142 813.5,142 807.5,164 785.5,164"/>
+    <!-- D -->
+    <path fill-rule="evenodd" d="M868 80 L894 80 A42 42 0 0 1 894 164 L868 164 Z M888 100 L894 100 A22 22 0 0 1 894 144 L888 144 Z"/>
+  </g>
+  <!-- Sub-badge -->
+  <g id="badge" transform="translate(-26, 0)">
+    <!-- PRO Tag in electric crimson -->
+    <g fill="#FF0033">
+      <!-- P -->
+      <polygon points="334,186 348,186 348,198 340,198 340,208 334,208"/>
+      <!-- R -->
+      <polygon points="354,186 368,186 368,198 360,198 368,208 362,208 356,200 356,208 350,208 350,186"/>
+      <!-- O -->
+      <path fill-rule="evenodd" d="M382 186 A11 11 0 1 1 381.9 186 Z M382 191 A6 6 0 1 0 382.1 191 Z"/>
+    </g>
+    <!-- Cyan separator -->
+    <rect x="404" y="196" width="20" height="3" rx="1.5" fill="#00F0FF"/>
+    <!-- Subtitle text -->
+    <g fill="#94A3B8">
+      <polygon points="436,186 450,186 450,189 440,189 440,193 450,194 450,206 436,206 436,202 446,202 446,197 436,196"/>
+      <polygon points="458,186 472,186 472,189 467,189 467,206 463,206 463,189 458,189"/>
+      <path d="M478 186 L482 186 L482 199 A3 3 0 0 0 488 199 L488 186 L492 186 L492 199 A7 7 0 0 1 478 199 Z"/>
+      <path fill-rule="evenodd" d="M498 186 L506 186 A10 10 0 0 1 506 206 L498 206 Z M502 190 L506 190 A6 6 0 0 1 506 202 L502 202 Z"/>
+      <rect x="516" y="186" width="4" height="20"/>
+      <path fill-rule="evenodd" d="M532 186 A10 10 0 1 1 531.9 186 Z M532 190 A6 6 0 1 0 532.1 190 Z"/>
+    </g>
+  </g>
+</g></svg>
