@@ -1,7 +1,7 @@
 """Channels, channel accounts, metadata templates, and batch upload routes."""
 from flask import Blueprint, request, jsonify
 from api.auth import require_auth
-from api.services.manager_service import get_channel_manager
+from api.services.manager_service import get_channel_manager, get_oauth_manager
 from api.services.bulk_service import create_bulk_batch, get_bulk_status, get_all_bulk_batches
 
 channels_bp = Blueprint('channels', __name__)
@@ -14,7 +14,34 @@ channels_bp = Blueprint('channels', __name__)
 def get_accounts():
     """List all configured YouTube accounts."""
     cm = get_channel_manager()
-    return jsonify([acc.to_dict() for acc in cm.get_all_accounts()])
+    accounts = [acc.to_dict() for acc in cm.get_all_accounts()]
+
+    oauth_mgr = get_oauth_manager()
+    existing_emails = {a.get('email') for a in accounts if a.get('email')}
+    existing_ids = {a.get('account_id') for a in accounts if a.get('account_id')}
+
+    for aid, tdata in oauth_mgr._tokens.items():
+        uinfo = tdata.get('user_info', {})
+        email = uinfo.get('email', '')
+        if (email and email not in existing_emails) and (aid not in existing_ids):
+            yt_ch = tdata.get('youtube_channel') or {}
+            accounts.append({
+                "account_id": aid,
+                "email": email,
+                "display_name": uinfo.get('name', email),
+                "account_type": "personal",
+                "is_active": True,
+                "is_verified": True,
+                "google_profile_image": uinfo.get('picture', None),
+                "channels": [yt_ch.get('id')] if yt_ch.get('id') else [],
+                "created_at": tdata.get('connected_at', ''),
+                "access_token": tdata.get('access_token')
+            })
+            if email:
+                existing_emails.add(email)
+            existing_ids.add(aid)
+
+    return jsonify(accounts)
 
 
 @channels_bp.route('/api/channels/accounts', methods=['POST'])
@@ -84,19 +111,26 @@ def patch_account(account_id: str):
 def delete_account(account_id: str):
     """Delete a YouTube account."""
     cm = get_channel_manager()
+    oauth_mgr = get_oauth_manager()
+
     account = cm.get_account(account_id)
-    if not account:
+    token = oauth_mgr.get_account_token(account_id)
+    if not account and not token:
         return jsonify({"error": "Account not found"}), 404
 
-    channels = cm.get_channels_by_account(account_id)
-    force = request.args.get('force', '').lower() in ('true', '1')
-    if channels and not force:
-        return jsonify({
-            "error": "Account has associated channels. Pass ?force=true to cascade delete.",
-            "channel_count": len(channels)
-        }), 409
+    if account:
+        channels = cm.get_channels_by_account(account_id)
+        force = request.args.get('force', '').lower() in ('true', '1')
+        if channels and not force:
+            return jsonify({
+                "error": "Account has associated channels. Pass ?force=true to cascade delete.",
+                "channel_count": len(channels)
+            }), 409
+        cm.remove_account(account_id)
 
-    cm.remove_account(account_id)
+    if token:
+        oauth_mgr.remove_account_token(account_id)
+
     return jsonify({"message": "Account deleted"}), 200
 
 
@@ -144,7 +178,36 @@ def get_channels():
         channels = cm.get_channels_by_account(account_filter)
     else:
         channels = cm.get_all_channels()
-    return jsonify([ch.to_dict() for ch in channels])
+    ch_list = [ch.to_dict() for ch in channels]
+
+    oauth_mgr = get_oauth_manager()
+    existing_cids = {c.get('channel_id') for c in ch_list if c.get('channel_id')}
+    for aid, tdata in oauth_mgr._tokens.items():
+        yt_ch = tdata.get('youtube_channel')
+        if yt_ch and isinstance(yt_ch, dict):
+            cid = yt_ch.get('id')
+            if cid and cid not in existing_cids:
+                if account_filter and account_filter != aid:
+                    continue
+                snippet = yt_ch.get('snippet', {})
+                stats = yt_ch.get('statistics', {})
+                ch_list.append({
+                    "channel_id": cid,
+                    "account_id": aid,
+                    "name": snippet.get('title', 'YouTube Channel'),
+                    "handle": snippet.get('customUrl', ''),
+                    "description": snippet.get('description', ''),
+                    "status": "active",
+                    "account_type": "personal",
+                    "is_managed": True,
+                    "subscriber_count": int(stats.get('subscriberCount', 0)),
+                    "video_count": int(stats.get('videoCount', 0)),
+                    "view_count": int(stats.get('viewCount', 0)),
+                    "created_at": tdata.get('connected_at', '')
+                })
+                existing_cids.add(cid)
+
+    return jsonify(ch_list)
 
 
 @channels_bp.route('/api/channels', methods=['POST'])
@@ -152,6 +215,7 @@ def get_channels():
 def create_channel():
     """Add a new managed channel."""
     cm = get_channel_manager()
+    oauth_mgr = get_oauth_manager()
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid request body"}), 400
@@ -164,8 +228,20 @@ def create_channel():
         return jsonify({"error": "account_id, channel_id, and name are required"}), 400
 
     account = cm.get_account(account_id)
-    if not account:
+    oauth_token = oauth_mgr.get_account_token(account_id)
+    if not account and not oauth_token:
         return jsonify({"error": "Unknown account_id"}), 400
+
+    if not account and oauth_token:
+        uinfo = oauth_token.get('user_info', {})
+        account = cm.add_account(
+            email=uinfo.get('email', 'oauth@google.com'),
+            display_name=uinfo.get('name', 'Google Account'),
+            account_type='personal',
+            access_token=oauth_token.get('access_token'),
+            refresh_token=oauth_token.get('refresh_token'),
+            account_id=account_id
+        )
 
     try:
         channel = cm.add_channel(
@@ -208,10 +284,21 @@ def patch_channel(channel_id: str):
 def delete_channel(channel_id: str):
     """Delete a managed channel."""
     cm = get_channel_manager()
+    oauth_mgr = get_oauth_manager()
+
     channel = cm.get_channel(channel_id)
-    if not channel:
+    found_in_oauth = False
+    for aid, tdata in list(oauth_mgr._tokens.items()):
+        yt_ch = tdata.get('youtube_channel')
+        if yt_ch and isinstance(yt_ch, dict) and yt_ch.get('id') == channel_id:
+            tdata['youtube_channel'] = None
+            oauth_mgr._save_tokens()
+            found_in_oauth = True
+
+    if not channel and not found_in_oauth:
         return jsonify({"error": "Channel not found"}), 404
-    cm.remove_channel(channel_id)
+    if channel:
+        cm.remove_channel(channel_id)
     return jsonify({"message": "Channel deleted"}), 200
 
 

@@ -12,10 +12,19 @@ youtube_bp = Blueprint('youtube', __name__)
 
 # ============ YOUTUBE API ENDPOINTS ============
 
-@youtube_bp.route('/api/youtube/auth', methods=['POST'])
+@youtube_bp.route('/api/youtube/auth', methods=['GET', 'POST'])
 def youtube_auth():
-    """Authenticate and test connection to YouTube Data API."""
+    """Authenticate, configure, and inspect YouTube Data API key/status."""
     _, _, _, _, _, _, _, YouTubeAPI, _, _, _, _, _, _ = get_classes()
+    if request.method == 'GET':
+        api = YouTubeAPI()
+        has_key = bool(api.api_key)
+        masked = f"{api.api_key[:4]}...{api.api_key[-4:]}" if (api.api_key and len(api.api_key) > 8) else ("Configured" if has_key else "")
+        return jsonify({
+            "configured": has_key,
+            "api_key_masked": masked
+        })
+
     data = request.json or {}
     api_key = data.get('api_key')
     access_token = data.get('access_token')

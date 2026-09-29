@@ -15,7 +15,7 @@ def create_bulk_batch(video_paths, channel_ids, metadata=None, priority="normal"
     if not video_paths or not channel_ids:
         raise ValueError("video_paths and channel_ids required")
 
-    _, _, UploadStatus, _, _, UploadQueue, ChannelManager, _, _, _, _, _, _, _ = get_classes()
+    _, UploadJob, UploadStatus, _, _, UploadQueue, ChannelManager, _, _, _, _, _, _, _ = get_classes()
     channel_manager = get_channel_manager()
     queue = get_upload_queue()
 

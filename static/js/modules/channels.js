@@ -40,45 +40,48 @@ export function initChannelTabs() {
     // Add Channel button
     document.getElementById('addChannelBtn')?.addEventListener('click', () => {
         const bodyHtml = `
-            <form id="addChannelForm">
-                <div class="form-group"><label class="form-label">Account</label><select id="chAccount" class="form-control"></select></div>
-                <div class="form-group"><label class="form-label">Channel Name</label><input type="text" id="chName" class="form-control" placeholder="Gaming Central" required></div>
+            <form id="addChannelForm" onsubmit="event.preventDefault(); saveChannelFromModal();">
+                <div class="form-group"><label class="form-label">Linked Account</label><select id="chAccount" class="form-control"></select></div>
+                <div class="form-group"><label class="form-label">Channel Name <span class="text-danger">*</span></label><input type="text" id="chName" class="form-control" placeholder="Gaming Central" required></div>
+                <div class="form-group"><label class="form-label">Channel ID <small class="text-muted">(Optional, e.g. UCxxxx)</small></label><input type="text" id="chId" class="form-control" placeholder="Leave blank to auto-generate"></div>
                 <div class="form-group"><label class="form-label">Handle</label><input type="text" id="chHandle" class="form-control" placeholder="@gamingcentral"></div>
                 <div class="form-group"><label class="form-label">Description</label><textarea id="chDesc" class="form-control" placeholder="Daily gaming streams and video uploads"></textarea></div>
             </form>
         `;
         const footerHtml = `
-            <button class="btn btn-primary" onclick="saveChannelFromModal()">Add Channel</button>
+            <button class="btn btn-primary" onclick="saveChannelFromModal()"><i class="fas fa-plus"></i> Add Channel</button>
             <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
         `;
-        openModal('Add Channel', bodyHtml, footerHtml);
+        openModal('Add YouTube Channel', bodyHtml, footerHtml);
         loadAccountsForSelect('chAccount');
     });
 
     // Add Template button
     document.getElementById('addTemplateBtn')?.addEventListener('click', () => {
         const bodyHtml = `
-            <form id="addTemplateForm">
-                <div class="form-group"><label class="form-label">Channel</label><select id="tmplChannel" class="form-control"></select></div>
-                <div class="form-group"><label class="form-label">Template Name</label><input type="text" id="tmplName" class="form-control" placeholder="Series Upload Preset" required></div>
+            <form id="addTemplateForm" onsubmit="event.preventDefault(); saveTemplateFromModal();">
+                <div class="form-group"><label class="form-label">Channel <span class="text-danger">*</span></label><select id="tmplChannel" class="form-control" required></select></div>
+                <div class="form-group"><label class="form-label">Template Name <span class="text-danger">*</span></label><input type="text" id="tmplName" class="form-control" placeholder="Series Upload Preset" required></div>
                 <div class="form-group"><label class="form-label">Title Template</label><input type="text" id="tmplTitle" class="form-control" placeholder="{video_title} - Episode {episode}"></div>
                 <div class="form-group"><label class="form-label">Description Template</label><textarea id="tmplDesc" class="form-control" placeholder="{video_description}\n\nSubscribe for more!"></textarea></div>
                 <div class="form-group"><label class="form-label">Tags (comma separated)</label><input type="text" id="tmplTags" class="form-control" placeholder="gaming, letsplay, walkthrough"></div>
             </form>
         `;
         const footerHtml = `
-            <button class="btn btn-primary" onclick="saveTemplateFromModal()">Save Template</button>
+            <button class="btn btn-primary" onclick="saveTemplateFromModal()"><i class="fas fa-save"></i> Save Template</button>
             <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
         `;
         openModal('Create Template', bodyHtml, footerHtml);
-        loadAccountsForSelect('tmplChannel');
+        loadChannelsForSelect('tmplChannel');
     });
 
     // Bulk upload and YouTube API buttons
+    initBatchVideoUpload();
     document.getElementById('bulkUploadForm')?.addEventListener('submit', handleBulkUpload);
     document.getElementById('saveApiKey')?.addEventListener('click', saveYouTubeApiKey);
     document.getElementById('loadMyChannels')?.addEventListener('click', loadYouTubeChannels);
     document.getElementById('searchYouTube')?.addEventListener('click', searchYouTubeVideos);
+    initYouTubeApiStatus();
 }
 
 // ===== Google OAuth2 & Config =====
@@ -642,8 +645,13 @@ export async function addAccount() {
     }
 
     try {
-        await api.post('/api/supabase/accounts', { email, display_name: name, account_type: type });
-        showToast('Account registered!', 'success');
+        try {
+            await api.post('/api/channels/accounts', { email, display_name: name, account_type: type });
+        } catch {
+            await api.post('/api/supabase/accounts', { email, display_name: name, account_type: type });
+        }
+        showToast('Account registered successfully!', 'success');
+        closeModal();
         closeAddAccountModal();
         loadAccounts();
     } catch (err) {
@@ -652,11 +660,35 @@ export async function addAccount() {
 }
 
 export function openAddAccountModal() {
-    const modal = document.getElementById('addAccountModal');
-    if (modal) modal.classList.remove('hidden');
+    const bodyHtml = `
+        <form id="addAccountForm" onsubmit="event.preventDefault(); addAccount();">
+            <div class="form-group">
+                <label class="form-label">Email Address <span class="text-danger">*</span></label>
+                <input type="email" id="accEmail" class="form-control" placeholder="creator@gmail.com" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Display Name / Channel Name <span class="text-danger">*</span></label>
+                <input type="text" id="accName" class="form-control" placeholder="Gaming Central or Studio Name" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Account Type</label>
+                <select id="accType" class="form-control">
+                    <option value="personal">Personal Channel</option>
+                    <option value="brand">Brand Channel</option>
+                    <option value="business">Business Account</option>
+                </select>
+            </div>
+        </form>
+    `;
+    const footerHtml = `
+        <button type="button" class="btn btn-primary" onclick="addAccount()"><i class="fas fa-plus"></i> Add Account</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+    `;
+    openModal('Register YouTube Account', bodyHtml, footerHtml);
 }
 
 export function closeAddAccountModal() {
+    closeModal();
     const modal = document.getElementById('addAccountModal');
     if (modal) modal.classList.add('hidden');
 }
@@ -749,6 +781,7 @@ export async function deleteChannel(channelId) {
 export async function saveChannelFromModal() {
     const accountId = document.getElementById('chAccount')?.value;
     const name = document.getElementById('chName')?.value?.trim();
+    const customId = document.getElementById('chId')?.value?.trim();
     const handle = document.getElementById('chHandle')?.value?.trim();
     const desc = document.getElementById('chDesc')?.value?.trim();
 
@@ -757,10 +790,12 @@ export async function saveChannelFromModal() {
         return;
     }
 
+    const channelId = customId || name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+
     try {
         await api.post('/api/channels', {
             account_id: accountId,
-            channel_id: name.toLowerCase().replace(/\s+/g, '-'),
+            channel_id: channelId,
             name,
             handle,
             description: desc,
@@ -858,11 +893,65 @@ export async function saveTemplateFromModal() {
 }
 
 // ===== Batch Uploads & YouTube API v3 =====
+let selectedBatchFiles = [];
+
+export function initBatchVideoUpload() {
+    const addBtn = document.getElementById('addBatchVideos');
+    if (!addBtn) return;
+
+    let hiddenInput = document.getElementById('batchFileInput');
+    if (!hiddenInput) {
+        hiddenInput = document.createElement('input');
+        hiddenInput.type = 'file';
+        hiddenInput.id = 'batchFileInput';
+        hiddenInput.multiple = true;
+        hiddenInput.accept = 'video/*';
+        hiddenInput.style.display = 'none';
+        document.body.appendChild(hiddenInput);
+
+        hiddenInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            files.forEach(f => {
+                if (!selectedBatchFiles.some(bf => bf.name === f.name && bf.size === f.size)) {
+                    selectedBatchFiles.push(f);
+                }
+            });
+            renderBatchVideoList();
+        });
+    }
+
+    addBtn.onclick = () => hiddenInput.click();
+}
+
+export function renderBatchVideoList() {
+    const listEl = document.getElementById('batchVideoList');
+    if (!listEl) return;
+    if (selectedBatchFiles.length === 0) {
+        listEl.innerHTML = '<p class="text-muted">No files added yet</p>';
+        return;
+    }
+    listEl.innerHTML = selectedBatchFiles.map((f, idx) => `
+        <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.04); padding:8px 12px; margin-bottom:6px; border-radius:6px; font-size:13px;">
+            <span><i class="fas fa-file-video text-primary"></i> <b>${f.name}</b> <small class="text-muted">(${(f.size / (1024*1024)).toFixed(1)} MB)</small></span>
+            <button type="button" class="btn btn-sm text-danger" style="background:none; border:none; cursor:pointer;" onclick="removeBatchFile(${idx})">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
+export function removeBatchFile(index) {
+    selectedBatchFiles.splice(index, 1);
+    renderBatchVideoList();
+}
+window.removeBatchFile = removeBatchFile;
+
 export async function loadBatches() {
     try {
         const batches = await api.get('/api/batches');
         renderBatches(batches);
         loadBatchChannels();
+        loadBatchTemplates();
     } catch (err) {
         console.error('Failed to load batches:', err);
     }
@@ -880,13 +969,13 @@ export function renderBatches(batches = []) {
     container.innerHTML = batches.map(b => {
         const percent = b.total_videos > 0 ? Math.round((b.uploaded_count / b.total_videos) * 100) : 0;
         return `
-            <div class="batch-card">
+            <div class="batch-card" style="margin-bottom:12px; padding:16px; border-radius:10px; background:var(--bg-card,#161b26); border:1px solid rgba(255,255,255,0.06);">
                 <div style="display:flex;justify-content:space-between;align-items:center">
-                    <h4>${b.name}</h4>
+                    <h4 style="margin:0;">${b.name}</h4>
                     <span class="status-badge status-${b.status}">${b.status}</span>
                 </div>
-                <div class="batch-progress"><div class="batch-progress-bar" style="width: ${percent}%"></div></div>
-                <p class="text-muted">${b.uploaded_count}/${b.total_videos} videos uploaded • ${b.failed_count || 0} failed</p>
+                <div class="batch-progress" style="margin:10px 0;"><div class="batch-progress-bar" style="width: ${percent}%;"></div></div>
+                <p class="text-muted" style="margin:0; font-size:12px;">${b.uploaded_count || 0}/${b.total_videos || 0} videos uploaded • ${b.failed_count || 0} failed</p>
             </div>
         `;
     }).join('');
@@ -896,12 +985,25 @@ export async function loadBatchChannels() {
     try {
         const channels = await api.get('/api/channels');
         const select = document.getElementById('batchChannel');
-        if (select) {
-            select.innerHTML = '<option value="">Select channel</option>' +
-                channels.map(c => `<option value="${c.channel_id}">${c.name}</option>`).join('');
+        if (select && Array.isArray(channels)) {
+            select.innerHTML = '<option value="">Select target channel</option>' +
+                channels.map(c => `<option value="${c.channel_id}">📺 ${c.name} (${c.handle || c.channel_id})</option>`).join('');
         }
     } catch (err) {
         console.error('Failed to load channels for batch:', err);
+    }
+}
+
+export async function loadBatchTemplates() {
+    try {
+        const templates = await api.get('/api/templates');
+        const select = document.getElementById('batchTemplate');
+        if (select && Array.isArray(templates)) {
+            select.innerHTML = '<option value="">No template</option>' +
+                templates.map(t => `<option value="${t.template_id}">${t.name}</option>`).join('');
+        }
+    } catch (err) {
+        console.error('Failed to load templates for batch:', err);
     }
 }
 
@@ -909,21 +1011,36 @@ export async function handleBulkUpload(e) {
     e.preventDefault();
     const name = document.getElementById('batchName')?.value?.trim();
     const channelId = document.getElementById('batchChannel')?.value;
+    const templateId = document.getElementById('batchTemplate')?.value || null;
+    const priority = document.getElementById('batchPriority')?.value || 'normal';
 
     if (!name || !channelId) {
-        showToast('Batch name and channel are required', 'warning');
+        showToast('Batch name and target channel are required', 'warning');
+        return;
+    }
+
+    if (selectedBatchFiles.length === 0) {
+        showToast('Please click "Add Videos to Batch" and choose at least one video file', 'warning');
         return;
     }
 
     try {
-        await api.post('/api/batches', {
-            name,
-            channel_id: channelId,
-            account_id: '',
-            video_paths: [],
-            priority: 'normal'
-        });
-        showToast('Batch pipeline initialized!', 'success');
+        showToast(`Queueing batch "${name}" (${selectedBatchFiles.length} videos)...`, 'info');
+
+        for (const file of selectedBatchFiles) {
+            const formData = new FormData();
+            formData.append('video', file);
+            formData.append('channel_id', channelId);
+            formData.append('priority', priority);
+            if (templateId) formData.append('template_id', templateId);
+            formData.append('metadata', JSON.stringify({ batch_name: name }));
+            await api.post('/api/jobs', formData);
+        }
+
+        showToast(`🚀 Successfully queued batch "${name}" with ${selectedBatchFiles.length} videos!`, 'success');
+        selectedBatchFiles = [];
+        renderBatchVideoList();
+        document.getElementById('bulkUploadForm')?.reset();
         loadBatches();
     } catch (err) {
         showToast('Failed to create batch: ' + err.message, 'error');
@@ -935,11 +1052,62 @@ export async function loadAccountsForSelect(selectId) {
         const accounts = await api.get('/api/channels/accounts');
         const select = document.getElementById(selectId);
         if (select && Array.isArray(accounts)) {
-            select.innerHTML = accounts.map(a => `<option value="${a.account_id}">${a.display_name}</option>`).join('');
+            select.innerHTML = accounts.map(a => {
+                const id = a.account_id || a.id;
+                return `<option value="${id}">${a.display_name} (${a.email || 'Account'})</option>`;
+            }).join('');
         }
     } catch (err) {
         console.error(`Failed to load accounts for ${selectId}:`, err);
     }
 }
+
+export async function loadChannelsForSelect(selectId) {
+    try {
+        const channels = await api.get('/api/channels');
+        const select = document.getElementById(selectId);
+        if (select && Array.isArray(channels)) {
+            select.innerHTML = '<option value="">Select Channel</option>' +
+                channels.map(c => `<option value="${c.channel_id}">${c.name} (${c.handle || c.channel_id})</option>`).join('');
+        }
+    } catch (err) {
+        console.error(`Failed to load channels for ${selectId}:`, err);
+    }
+}
+
+export async function initYouTubeApiStatus() {
+    try {
+        const status = await api.get('/api/youtube/auth');
+        const input = document.getElementById('apiKeyInput');
+        if (status && status.configured && input) {
+            input.placeholder = `Configured (${status.api_key_masked || 'Active'})`;
+        }
+    } catch {}
+}
+
+// Global window bindings for inline onclick attributes and modals
+Object.assign(window, {
+    uploadToAccount,
+    viewChannelStats,
+    deleteAccount,
+    addAccount,
+    openAddAccountModal,
+    closeAddAccountModal,
+    deleteChannel,
+    saveChannelFromModal,
+    deleteTemplate,
+    saveTemplateFromModal,
+    removeBatchFile,
+    openConfigOAuthModal,
+    saveOAuthCredentialsFromModal,
+    connectGoogle,
+    copyLoginCommand,
+    copyRedirectUri,
+    openBrowserLoginModal,
+    loadAccounts,
+    loadChannels,
+    loadTemplates,
+    loadBatches
+});
 
 export { saveYouTubeApiKey, loadYouTubeChannels, searchYouTubeVideos };
