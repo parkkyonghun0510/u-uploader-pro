@@ -42,6 +42,7 @@ class UploadJob:
     max_retries: int = 3
     channel_id: Optional[str] = None
     template_id: Optional[str] = None
+    metadata: Optional[dict] = None
 
     def __post_init__(self):
         if not self.job_id:
@@ -72,7 +73,8 @@ class UploadJob:
             "retry_count": self.retry_count,
             "max_retries": self.max_retries,
             "channel_id": self.channel_id,
-            "template_id": self.template_id
+            "template_id": self.template_id,
+            "metadata": self.metadata or {}
         }
 
 

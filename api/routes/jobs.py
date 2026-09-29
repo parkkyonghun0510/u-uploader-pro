@@ -2,8 +2,10 @@
 import json
 import os
 import threading
+import uuid
 from pathlib import Path
 from flask import Blueprint, request, jsonify, current_app
+from werkzeug.utils import secure_filename
 
 from api.auth import require_auth
 from api.extensions import logger
@@ -45,23 +47,72 @@ def get_job(job_id: str):
 @require_auth
 def create_job():
     """Create and schedule or start a new video upload job."""
-    data = request.json or {}
-    video_path = data.get('video_path')
+    upload_folder = Path(current_app.config.get('UPLOAD_FOLDER', Path.cwd() / 'uploads'))
+    upload_folder.mkdir(parents=True, exist_ok=True)
+
+    if request.is_json:
+        data = request.json or {}
+        video_path = data.get('video_path')
+        metadata_path = data.get('metadata_path')
+        thumbnail_path = data.get('thumbnail_path')
+        metadata = data.get('metadata') or {}
+        schedule = data.get('schedule')
+        priority = data.get('priority', 'normal')
+        channel_id = data.get('channel_id')
+        template_id = data.get('template_id')
+    else:
+        data = request.form.to_dict()
+        schedule = data.get('schedule')
+        priority = data.get('priority', 'normal')
+        channel_id = data.get('channel_id')
+        template_id = data.get('template_id')
+
+        meta_raw = data.get('metadata')
+        metadata = {}
+        if meta_raw:
+            try:
+                metadata = json.loads(meta_raw) if isinstance(meta_raw, str) else meta_raw
+            except Exception:
+                pass
+
+        video_path = None
+        if 'video' in request.files and request.files['video'].filename:
+            v_file = request.files['video']
+            safe_v_name = f"{uuid.uuid4().hex[:8]}_{secure_filename(v_file.filename)}"
+            saved_v_path = str(upload_folder / safe_v_name)
+            v_file.save(saved_v_path)
+            video_path = saved_v_path
+        elif data.get('video_path'):
+            video_path = data.get('video_path')
+
+        metadata_path = None
+        if 'metadata_file' in request.files and request.files['metadata_file'].filename:
+            m_file = request.files['metadata_file']
+            safe_m_name = f"{uuid.uuid4().hex[:8]}_{secure_filename(m_file.filename)}"
+            saved_m_path = str(upload_folder / safe_m_name)
+            m_file.save(saved_m_path)
+            metadata_path = saved_m_path
+        elif data.get('metadata_path'):
+            metadata_path = data.get('metadata_path')
+
+        thumbnail_path = None
+        if 'thumbnail' in request.files and request.files['thumbnail'].filename:
+            t_file = request.files['thumbnail']
+            safe_t_name = f"{uuid.uuid4().hex[:8]}_{secure_filename(t_file.filename)}"
+            saved_t_path = str(upload_folder / safe_t_name)
+            t_file.save(saved_t_path)
+            thumbnail_path = saved_t_path
+        elif data.get('thumbnail_path'):
+            thumbnail_path = data.get('thumbnail_path')
+
     if not video_path or not os.path.exists(video_path):
         return jsonify({"error": "Video file not found"}), 400
 
-    metadata_path = data.get('metadata_path')
     if metadata_path and not os.path.exists(metadata_path):
         return jsonify({"error": "Metadata file not found"}), 400
 
-    thumbnail_path = data.get('thumbnail_path')
     if thumbnail_path and not os.path.exists(thumbnail_path):
         return jsonify({"error": "Thumbnail file not found"}), 400
-
-    schedule = data.get('schedule')
-    priority = data.get('priority', 'normal')
-    channel_id = data.get('channel_id')
-    template_id = data.get('template_id')
 
     _, UploadJob, UploadStatus, _, _, _, _, _, _, _, _, _, _, _ = get_classes()
     job = UploadJob(
@@ -71,7 +122,8 @@ def create_job():
         schedule=schedule,
         priority=priority,
         channel_id=channel_id,
-        template_id=template_id
+        template_id=template_id,
+        metadata=metadata
     )
 
     queue = get_upload_queue()

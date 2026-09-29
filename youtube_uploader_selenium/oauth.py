@@ -189,10 +189,16 @@ class GoogleOAuth2:
         except Exception as e:
             return {"error": str(e)}
 
-    def refresh_access_token(self, refresh_token: str, client_id: str) -> Optional[dict]:
+    def refresh_access_token(self, refresh_token: str, client_id: Optional[str] = None) -> Optional[dict]:
         """Refresh expired access token."""
-        if client_id not in self._clients:
-            return None
+        if not client_id or client_id not in self._clients:
+            valid = self.get_valid_clients()
+            candidates = valid if valid else self._clients
+            if candidates:
+                sorted_c = sorted(candidates.values(), key=lambda x: x.get("created_at", ""), reverse=True)
+                client_id = sorted_c[0]["client_id"]
+            else:
+                return None
 
         client = self._clients[client_id]
 
@@ -325,3 +331,53 @@ class OAuthManager:
         """Remove tokens for an account."""
         self._tokens.pop(account_id, None)
         self._save_tokens()
+
+    def get_valid_access_token(self, account_id: Optional[str] = None, channel_id: Optional[str] = None, google_oauth = None) -> Optional[str]:
+        """Retrieve active valid access token, auto-refreshing if expired."""
+        target_id = account_id
+        if not target_id and channel_id:
+            for aid, tdata in self._tokens.items():
+                if aid == channel_id:
+                    target_id = aid
+                    break
+                yt_ch = tdata.get("youtube_channel")
+                if isinstance(yt_ch, dict) and yt_ch.get("id") == channel_id:
+                    target_id = aid
+                    break
+
+        if not target_id and self._tokens:
+            latest = sorted(self._tokens.items(), key=lambda item: item[1].get('connected_at', ''), reverse=True)
+            target_id = latest[0][0]
+
+        if not target_id:
+            return None
+
+        token_entry = self._tokens.get(target_id)
+        if not token_entry:
+            return None
+
+        expires_at = token_entry.get("expires_at")
+        is_expired = False
+        if expires_at:
+            try:
+                exp_dt = datetime.fromisoformat(expires_at)
+                if exp_dt <= datetime.now() + timedelta(seconds=60):
+                    is_expired = True
+            except Exception:
+                pass
+
+        if is_expired:
+            refresh_tok = token_entry.get("refresh_token")
+            if refresh_tok and google_oauth:
+                refreshed = google_oauth.refresh_access_token(refresh_tok)
+                if refreshed and "access_token" in refreshed:
+                    new_token = refreshed["access_token"]
+                    expires_in = refreshed.get("expires_in", 3600)
+                    new_exp = (datetime.now() + timedelta(seconds=expires_in)).isoformat()
+                    token_entry["access_token"] = new_token
+                    token_entry["expires_at"] = new_exp
+                    self._save_tokens()
+                    return new_token
+
+        return token_entry.get("access_token")
+

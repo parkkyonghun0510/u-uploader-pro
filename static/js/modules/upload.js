@@ -94,18 +94,27 @@ export async function handleUpload(e) {
 
     const channelInput = document.getElementById('uploadChannelSelect');
 
-    const jobData = {
-        video_path: videoInput.files[0].path || videoInput.files[0].name,
-        metadata_path: metaInput && metaInput.files.length ? metaInput.files[0].name : null,
-        thumbnail_path: thumbInput && thumbInput.files.length ? thumbInput.files[0].name : null,
-        schedule: (scheduleInput && scheduleInput.value) ? scheduleInput.value : null,
-        priority: (priorityInput && priorityInput.value) ? priorityInput.value : 'normal',
-        channel_id: (channelInput && channelInput.value) ? channelInput.value : null,
-        metadata: metadata
-    };
+    const formData = new FormData();
+    formData.append('video', videoInput.files[0]);
+    if (metaInput && metaInput.files.length) {
+        formData.append('metadata_file', metaInput.files[0]);
+    }
+    if (thumbInput && thumbInput.files.length) {
+        formData.append('thumbnail', thumbInput.files[0]);
+    }
+    if (scheduleInput && scheduleInput.value) {
+        formData.append('schedule', scheduleInput.value);
+    }
+    if (priorityInput && priorityInput.value) {
+        formData.append('priority', priorityInput.value);
+    }
+    if (channelInput && channelInput.value) {
+        formData.append('channel_id', channelInput.value);
+    }
+    formData.append('metadata', JSON.stringify(metadata));
 
     try {
-        const result = await api.post('/api/jobs', jobData);
+        const result = await api.post('/api/jobs', formData);
         showToast(`🚀 Upload queued! Job ID: ${result.job_id || 'Active'}`, 'success');
         navigateTo('queue');
     } catch (err) {

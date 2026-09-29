@@ -10,6 +10,8 @@ from .manager_service import (
     get_classes,
     get_upload_queue,
     get_supabase_client,
+    get_oauth_manager,
+    get_google_oauth,
 )
 
 
@@ -105,45 +107,140 @@ def calculate_schedule_delay(schedule_str: str) -> float:
         return 1.0
 
 
+def _execute_api_upload(job, access_token: str):
+    """Execute video upload via YouTube Data API v3 resumable chunk upload."""
+    _, _, UploadStatus, _, _, _, _, YouTubeAPI, _, _, _, _, _, _ = get_classes()
+    api = YouTubeAPI(access_token=access_token)
+
+    title = None
+    description = ""
+    tags = []
+    privacy = "public"
+    category = "22"
+
+    # 1. Load from metadata file if present
+    if job.metadata_path and Path(job.metadata_path).exists():
+        try:
+            with open(job.metadata_path, 'r', encoding='utf-8') as f:
+                file_meta = json.load(f)
+                if isinstance(file_meta, dict):
+                    title = file_meta.get('title')
+                    description = file_meta.get('description', '')
+                    tags = file_meta.get('tags', [])
+                    privacy = file_meta.get('privacy', file_meta.get('privacyStatus', 'public'))
+                    category = str(file_meta.get('category', file_meta.get('categoryId', '22')))
+        except Exception as e:
+            job.add_log(f"Warning: could not read metadata_path: {e}")
+
+    # 2. Override from job.metadata dict if present
+    job_meta = getattr(job, 'metadata', None)
+    if isinstance(job_meta, dict) and job_meta:
+        if job_meta.get('title'):
+            title = job_meta['title']
+        if 'description' in job_meta:
+            description = job_meta['description']
+        if 'tags' in job_meta:
+            tags = job_meta['tags']
+        if job_meta.get('privacy'):
+            privacy = job_meta['privacy']
+        if job_meta.get('category'):
+            category = str(job_meta['category'])
+
+    # Fallback to filename stem
+    if not title:
+        title = Path(job.video_path).stem
+
+    job.add_log(f"Uploading via YouTube Data API v3: '{title}' [{privacy}]")
+    logger.info(f"Job {job.job_id}: starting YouTube Data API v3 upload: {title}")
+
+    def progress_callback(pct: float):
+        job.progress = pct
+        broadcast_progress(job.job_id)
+
+    success, video_id, err = api.upload_video_resumable(
+        video_path=job.video_path,
+        title=title,
+        description=description,
+        tags=tags,
+        category=category,
+        privacy=privacy,
+        thumbnail_path=job.thumbnail_path,
+        progress_callback=progress_callback
+    )
+
+    if success:
+        job.status = UploadStatus.COMPLETED
+        job.video_id = video_id
+        job.progress = 100.0
+        job.completed_at = datetime.now().isoformat()
+        job.add_log(f"Upload completed successfully via YouTube Data API v3! Video ID: {video_id}")
+        logger.info(f"Upload {job.job_id} completed successfully via API. Video ID: {video_id}")
+    else:
+        job.status = UploadStatus.FAILED
+        job.error_message = err or "Upload failed via YouTube API"
+        job.completed_at = datetime.now().isoformat()
+        job.add_log(f"API Upload failed: {job.error_message}")
+        logger.error(f"Upload {job.job_id} failed via API: {job.error_message}")
+
+
+def _execute_selenium_upload(job):
+    """Execute legacy Selenium Firefox upload."""
+    YouTubeUploader, _, UploadStatus, _, _, _, _, _, _, _, _, _, _, _ = get_classes()
+    uploader = YouTubeUploader(
+        video_path=job.video_path,
+        metadata_json_path=job.metadata_path,
+        thumbnail_path=job.thumbnail_path,
+        profile_path=job.profile_path,
+        job_id=job.job_id
+    )
+
+    uploader.add_log(f"Starting upload via Selenium for {job.video_path}")
+    if job.channel_id:
+        uploader.add_log(f"Target channel: {job.channel_id}")
+    was_uploaded, video_id = uploader.upload()
+
+    if was_uploaded:
+        job.status = UploadStatus.COMPLETED
+        job.video_id = video_id
+        job.progress = 100.0
+        job.completed_at = datetime.now().isoformat()
+        uploader.add_log(f"Upload completed! Video ID: {video_id}")
+        logger.info(f"Upload {job.job_id} completed successfully via Selenium")
+    else:
+        job.status = UploadStatus.FAILED
+        job.error_message = "Upload was cancelled or failed via Selenium"
+        job.completed_at = datetime.now().isoformat()
+        logger.warning(f"Upload {job.job_id} failed via Selenium")
+
+
 def start_upload_thread(job_id: str):
-    """Background worker thread to run Selenium YouTube upload."""
+    """Background worker thread to run YouTube upload via YouTube Data API v3 or Selenium."""
     queue = get_upload_queue()
     job = queue.get_job(job_id)
     if not job:
         return
 
     try:
-        YouTubeUploader, _, UploadStatus, _, _, _, _, _, _, _, _, _, _, _ = get_classes()
+        _, _, UploadStatus, _, _, _, _, _, _, _, _, _, _, _ = get_classes()
         job.status = UploadStatus.IN_PROGRESS
         job.started_at = datetime.now().isoformat()
         job.progress = 0.0
         broadcast_progress(job_id)
 
-        uploader = YouTubeUploader(
-            video_path=job.video_path,
-            metadata_json_path=job.metadata_path,
-            thumbnail_path=job.thumbnail_path,
-            profile_path=job.profile_path,
-            job_id=job_id
+        oauth_mgr = get_oauth_manager()
+        google_oauth = get_google_oauth()
+
+        access_token = oauth_mgr.get_valid_access_token(
+            account_id=job.channel_id,
+            channel_id=job.channel_id,
+            google_oauth=google_oauth
         )
 
-        uploader.add_log(f"Starting upload for {job.video_path}")
-        if job.channel_id:
-            uploader.add_log(f"Target channel: {job.channel_id}")
-        was_uploaded, video_id = uploader.upload()
-
-        if was_uploaded:
-            job.status = UploadStatus.COMPLETED
-            job.video_id = video_id
-            job.progress = 100.0
-            job.completed_at = datetime.now().isoformat()
-            uploader.add_log(f"Upload completed! Video ID: {video_id}")
-            logger.info(f"Upload {job_id} completed successfully")
+        if access_token:
+            _execute_api_upload(job, access_token)
         else:
-            job.status = UploadStatus.FAILED
-            job.error_message = "Upload was cancelled or failed"
-            job.completed_at = datetime.now().isoformat()
-            logger.warning(f"Upload {job_id} failed")
+            job.add_log("No active OAuth token found, falling back to Selenium browser uploader")
+            _execute_selenium_upload(job)
 
     except Exception as e:
         _, _, UploadStatus, _, _, _, _, _, _, _, _, _, _, _ = get_classes()
@@ -159,3 +256,4 @@ def start_upload_thread(job_id: str):
     finally:
         broadcast_progress(job_id)
         save_job_history(job)
+
