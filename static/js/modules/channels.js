@@ -238,51 +238,88 @@ export async function connectGoogle() {
         if (data.auth_url) {
             const popup = window.open(data.auth_url, 'Google OAuth', 'width=620,height=720');
             showToast('Google OAuth opened. Please authorize access in popup.', 'info');
-            const clientId = data.client_id || '';
+            let completed = false;
 
+            const handleCompletion = (result) => {
+                if (completed) return;
+                completed = true;
+                cleanup();
+                if (result && result.status === 'success') {
+                    showToast(result.message || 'YouTube account connected successfully!', 'success');
+                } else {
+                    showToast(result?.error || 'Failed to connect YouTube account', 'error');
+                }
+                try {
+                    if (popup && !popup.closed) popup.close();
+                } catch (e) {}
+                loadAccounts();
+            };
+
+            // 1. BroadcastChannel (safe across windows on same origin, immune to COOP)
+            let bc = null;
+            try {
+                bc = new BroadcastChannel('youtube_oauth_channel');
+                bc.onmessage = (event) => {
+                    if (event.data && event.data.type === 'OAUTH_COMPLETE') {
+                        handleCompletion(event.data);
+                    }
+                };
+            } catch (e) {}
+
+            // 2. Storage event listener (fallback across tabs/windows)
+            const onStorage = (event) => {
+                if (event.key === 'youtube_oauth_status' && event.newValue) {
+                    try {
+                        const parsed = JSON.parse(event.newValue);
+                        localStorage.removeItem('youtube_oauth_status');
+                        handleCompletion(parsed);
+                    } catch (e) {}
+                }
+            };
+            window.addEventListener('storage', onStorage);
+
+            // 3. postMessage listener
             const onMessage = (event) => {
                 if (event.data && event.data.type === 'OAUTH_COMPLETE') {
-                    clearInterval(checkAuth);
-                    window.removeEventListener('message', onMessage);
-                    if (event.data.status === 'success') {
-                        showToast(event.data.message || 'YouTube account connected successfully!', 'success');
-                    } else {
-                        showToast(event.data.error || 'Failed to connect YouTube account', 'error');
-                    }
-                    try { if (popup && !popup.closed) popup.close(); } catch {}
-                    loadAccounts();
+                    handleCompletion(event.data);
                 }
             };
             window.addEventListener('message', onMessage);
 
-            const checkAuth = setInterval(async () => {
-                if (!popup || popup.closed) {
-                    clearInterval(checkAuth);
-                    window.removeEventListener('message', onMessage);
-                    loadAccounts();
+            // 4. Safe polling fallback with COOP exception handling
+            const checkTimer = setInterval(() => {
+                if (completed) {
+                    clearInterval(checkTimer);
                     return;
                 }
                 try {
-                    const url = popup.location.href;
-                    if (url.includes('/api/youtube/oauth/callback')) {
-                        clearInterval(checkAuth);
-                        window.removeEventListener('message', onMessage);
-                        const code = new URL(url).searchParams.get('code');
-                        const stateParam = new URL(url).searchParams.get('state');
-                        const callbackRes = await api.get(`/api/youtube/oauth/callback?code=${code}&state=${stateParam}&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`);
-                        if (callbackRes.message) {
-                            showToast(callbackRes.message, 'success');
-                            try { popup.close(); } catch {}
-                            loadAccounts();
-                        } else if (callbackRes.error) {
-                            showToast(`Error: ${callbackRes.error}`, 'error');
-                            try { popup.close(); } catch {}
-                        }
+                    if (popup && popup.closed) {
+                        clearInterval(checkTimer);
+                        setTimeout(() => {
+                            if (!completed) {
+                                handleCompletion({ status: 'success', message: 'Updating connected channels...' });
+                            }
+                        }, 500);
                     }
-                } catch {
-                    // Cross-origin restriction while Google flow is in progress
+                } catch (e) {
+                    // Suppress Cross-Origin-Opener-Policy browser warning
                 }
             }, 1000);
+
+            // Auto-cleanup after 5 minutes
+            const cleanupTimer = setTimeout(() => {
+                cleanup();
+            }, 300000);
+
+            const cleanup = () => {
+                clearInterval(checkTimer);
+                clearTimeout(cleanupTimer);
+                window.removeEventListener('storage', onStorage);
+                window.removeEventListener('message', onMessage);
+                if (bc) {
+                    try { bc.close(); } catch (e) {}
+                }
+            };
         } else {
             if (data.needs_configuration || (data.error && data.error.includes('not configured'))) {
                 showToast('Google OAuth credentials not configured yet. Opening setup...', 'info');

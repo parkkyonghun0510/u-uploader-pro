@@ -172,7 +172,13 @@ def youtube_oauth_callback():
 .card{{background:#1e293b;border:1px solid #ef4444;border-radius:12px;padding:32px;text-align:center;max-width:440px;}}
 h2{{color:#ef4444;margin:0 0 12px;}}p{{color:#94a3b8;font-size:14px;margin-bottom:20px;}}
 a{{display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;}}</style></head>
-<body><div class="card"><h2>Authentication Failed</h2><p>{err_msg}</p><a href="/">Return to Dashboard</a></div></body></html>""", 400
+<body><div class="card"><h2>Authentication Failed</h2><p>{err_msg}</p><a href="/">Return to Dashboard</a></div>
+<script>
+try {{ new BroadcastChannel('youtube_oauth_channel').postMessage({{type:'OAUTH_COMPLETE',status:'error',error:'{err_msg}'}}); }} catch(e){{}}
+try {{ localStorage.setItem('youtube_oauth_status', JSON.stringify({{status:'error',error:'{err_msg}',ts:Date.now()}})); }} catch(e){{}}
+try {{ if(window.opener) window.opener.postMessage({{type:'OAUTH_COMPLETE',status:'error',error:'{err_msg}'}}, '*'); }} catch(e){{}}
+</script>
+</body></html>""", 400
         return jsonify({"error": err_msg}), 400
 
     # Save tokens to account
@@ -230,12 +236,14 @@ p{{color:#94a3b8;font-size:14px;margin:0 0 20px;}}
   <a href="/" class="btn">Return to Dashboard</a>
 </div>
 <script>
-if(window.opener){{
-  window.opener.postMessage({{type:'OAUTH_COMPLETE',status:'success',message:'YouTube account connected successfully!'}},'*');
-  setTimeout(function(){{window.close();}},1200);
-}}else{{
-  setTimeout(function(){{window.location.href='/';}},1800);
-}}
+// Notify opener window via BroadcastChannel, localStorage, and postMessage
+try {{ new BroadcastChannel('youtube_oauth_channel').postMessage({{type:'OAUTH_COMPLETE',status:'success',message:'YouTube account connected successfully!'}}); }} catch(e){{}}
+try {{ localStorage.setItem('youtube_oauth_status', JSON.stringify({{status:'success',message:'YouTube account connected successfully!',ts:Date.now()}})); }} catch(e){{}}
+try {{ if(window.opener) window.opener.postMessage({{type:'OAUTH_COMPLETE',status:'success',message:'YouTube account connected successfully!'}},'*'); }} catch(e){{}}
+setTimeout(function(){{
+  try {{ window.close(); }} catch(e){{}}
+  setTimeout(function(){{ window.location.href='/'; }}, 1000);
+}}, 1200);
 </script>
 </body></html>"""
 
