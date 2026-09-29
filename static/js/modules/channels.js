@@ -5,6 +5,8 @@
 
 import { api } from './api.js';
 import { API_BASE } from './constants.js';
+import { navigateTo } from './navigation.js';
+import { populateChannelDropdown } from './upload.js';
 import {
     showToast,
     openModal,
@@ -410,20 +412,32 @@ export async function loadAccounts() {
     try {
         let accounts = [];
         try {
-            accounts = await api.get('/api/supabase/accounts');
-        } catch {
-            // fallback to local channel manager accounts
-            try {
-                accounts = await api.get('/api/channels/accounts');
-            } catch {
-                accounts = [];
-            }
+            const localAccs = await api.get('/api/channels/accounts');
+            if (Array.isArray(localAccs)) accounts = localAccs;
+        } catch (e) {
+            console.warn('Could not fetch local accounts:', e);
         }
+
+        try {
+            const supaAccs = await api.get('/api/supabase/accounts');
+            if (Array.isArray(supaAccs) && supaAccs.length > 0) {
+                const existingEmails = new Set(accounts.map(a => a.email || a.id));
+                supaAccs.forEach(sa => {
+                    if (!existingEmails.has(sa.email) && !existingEmails.has(sa.id)) {
+                        accounts.push(sa);
+                    }
+                });
+            }
+        } catch (e) {
+            // Supabase session not active or not authenticated
+        }
+
         const badge = document.getElementById('accountCountBadge');
         if (badge) {
             badge.innerText = `${accounts.length} Account${accounts.length === 1 ? '' : 's'}`;
         }
         renderAccounts(accounts);
+        loadChannels(accounts);
     } catch (err) {
         console.error('Failed to load accounts:', err);
     }
@@ -438,7 +452,7 @@ export function renderAccounts(accounts = []) {
             <div class="empty-state">
                 <div class="empty-icon-ring"><i class="fab fa-youtube"></i></div>
                 <h3>No channels connected</h3>
-                <p>Run <code>python upload.py --login</code> for Studio uploads or click "Connect with Google" above.</p>
+                <p>Click "Connect with Google" above to link your YouTube channel and unlock upload and analytics features.</p>
             </div>
         `;
         return;
@@ -446,43 +460,176 @@ export function renderAccounts(accounts = []) {
 
     container.innerHTML = accounts.map(acc => {
         const isOAuth = !!(acc.access_token || (acc.id && String(acc.id).startsWith('oauth-')));
+        const safeName = (acc.display_name || 'YouTube Account').replace(/'/g, "\\'");
+        const safeId = (acc.id || acc.channel_id || '').replace(/'/g, "\\'");
+        const channelId = acc.channel_id || (acc.youtube_channel && acc.youtube_channel.id) || '';
+
         return `
-            <div class="account-card">
-                <div class="account-avatar">
-                    <i class="fas fa-${isOAuth ? 'tv' : 'user'}"></i>
-                </div>
-                <div class="account-info">
-                    <h4>${acc.display_name || 'Account'}</h4>
-                    <p>${acc.email || 'Local channel account'}</p>
-                    <div class="engine-track-badges" style="margin-top:6px;">
-                        <span class="track-badge track-badge-studio">
-                            <i class="fas fa-film"></i> Studio Direct: Ready
-                        </span>
-                        <span class="track-badge ${isOAuth ? 'track-badge-oauth' : 'track-badge-inactive'}">
-                            <i class="fab fa-google"></i> ${isOAuth ? 'Data API: Synced' : 'Data API: Offline'}
-                        </span>
+            <div class="account-card" style="display:flex; flex-direction:column; gap:12px; padding:16px; margin-bottom:12px; border-radius:12px; border:1px solid rgba(255,255,255,0.08); background:var(--bg-card, #161b26);">
+                <div style="display:flex; align-items:center; gap:14px; width:100%;">
+                    <div class="account-avatar" style="width:48px; height:48px; border-radius:50%; background:linear-gradient(135deg, #ef4444, #dc2626); display:flex; align-items:center; justify-content:center; color:#fff; font-size:22px; flex-shrink:0;">
+                        <i class="fab fa-youtube"></i>
+                    </div>
+                    <div class="account-info" style="flex:1; min-width:0;">
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <h4 style="margin:0; font-size:16px; font-weight:600;">${acc.display_name || 'YouTube Account'}</h4>
+                            <span class="status-badge ${acc.is_active !== false ? 'status-completed' : 'status-failed'}" style="font-size:11px;">
+                                ${acc.is_active !== false ? 'Active' : 'Inactive'}
+                            </span>
+                            <span class="account-badge ${acc.account_type || 'personal'}" style="font-size:10px;">${(acc.account_type || 'personal').toUpperCase()}</span>
+                        </div>
+                        <p style="margin:4px 0 0; color:var(--text-muted, #94a3b8); font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">
+                            ${acc.email || 'Google Connected Channel'}
+                        </p>
+                        <div class="engine-track-badges" style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
+                            <span class="track-badge ${isOAuth ? 'track-badge-oauth' : 'track-badge-inactive'}" style="font-size:11px; padding:2px 8px; border-radius:4px; background:rgba(34,197,94,0.15); color:#22c55e;">
+                                <i class="fab fa-google"></i> ${isOAuth ? 'Google OAuth: Connected' : 'Google: Offline'}
+                            </span>
+                        </div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <button class="btn btn-sm btn-icon text-danger" onclick="deleteAccount('${safeId}')" title="Disconnect Account" style="background:rgba(239,68,68,0.1); border:none; width:34px; height:34px; border-radius:8px; cursor:pointer;">
+                            <i class="fas fa-trash"></i>
+                        </button>
                     </div>
                 </div>
-                <span class="account-badge ${acc.account_type || 'personal'}">${(acc.account_type || 'personal').toUpperCase()}</span>
-                <span class="status-badge ${acc.is_active ? 'status-completed' : 'status-failed'}">${acc.is_active ? 'Active' : 'Inactive'}</span>
-                <button class="btn btn-sm btn-icon text-danger" onclick="deleteAccount('${acc.id}')" title="Disconnect Account">
-                    <i class="fas fa-trash"></i>
-                </button>
+
+                <!-- Action Toolbar for Connected Account -->
+                <div style="display:flex; gap:8px; flex-wrap:wrap; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06);">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="uploadToAccount('${safeId}', '${safeName}')">
+                        <i class="fas fa-cloud-upload-alt"></i> Upload Video
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="viewChannelStats('${channelId || safeId}', '${safeName}')">
+                        <i class="fas fa-chart-line"></i> View Stats & Videos
+                    </button>
+                    ${channelId ? `
+                        <a href="https://www.youtube.com/channel/${channelId}" target="_blank" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px; text-decoration:none;">
+                            <i class="fab fa-youtube text-danger"></i> Open on YouTube <i class="fas fa-external-link-alt" style="font-size:10px;"></i>
+                        </a>
+                    ` : ''}
+                </div>
             </div>
         `;
     }).join('');
 }
 
+export function uploadToAccount(channelId, channelName) {
+    navigateTo('upload');
+    setTimeout(() => {
+        const select = document.getElementById('uploadChannelSelect');
+        if (select) {
+            select.value = channelId;
+        }
+        showToast(`Target channel selected: ${channelName}`, 'info');
+    }, 150);
+}
+window.uploadToAccount = uploadToAccount;
+
+export async function viewChannelStats(channelId, channelName) {
+    openModal(`📊 Channel Intelligence: ${channelName}`, `
+        <div style="text-align:center; padding:32px;">
+            <i class="fas fa-circle-notch fa-spin fa-2x text-primary"></i>
+            <p style="margin-top:12px; color:#94a3b8;">Loading YouTube metrics and recent uploads...</p>
+        </div>
+    `);
+
+    try {
+        let details = null;
+        try {
+            details = await api.get(`/api/youtube/channels/${encodeURIComponent(channelId)}`);
+        } catch {
+            const allCh = await api.get('/api/youtube/channels');
+            if (Array.isArray(allCh) && allCh.length > 0) {
+                details = allCh[0];
+            }
+        }
+
+        const resolvedId = details?.id || channelId;
+        let videos = [];
+        try {
+            videos = await api.get(`/api/youtube/channels/${encodeURIComponent(resolvedId)}/videos?max_results=6`);
+        } catch {}
+
+        const snippet = details?.snippet || {};
+        const stats = details?.statistics || {};
+        const thumb = snippet?.thumbnails?.medium?.url || snippet?.thumbnails?.default?.url || '';
+
+        const bodyHtml = `
+            <div style="display:flex; flex-direction:column; gap:20px;">
+                <div style="display:flex; align-items:center; gap:16px; background:rgba(255,255,255,0.03); padding:16px; border-radius:10px;">
+                    ${thumb ? `<img src="${thumb}" style="width:60px; height:60px; border-radius:50%; border:2px solid #ef4444; object-fit:cover;">` : '<div style="width:60px; height:60px; border-radius:50%; background:#ef4444; display:flex; align-items:center; justify-content:center; font-size:24px; color:#fff;"><i class="fab fa-youtube"></i></div>'}
+                    <div>
+                        <h3 style="margin:0 0 4px 0; font-size:18px;">${snippet.title || channelName}</h3>
+                        <p style="margin:0; color:#94a3b8; font-size:13px;">${snippet.customUrl || resolvedId}</p>
+                    </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:12px;">
+                    <div style="background:rgba(255,255,255,0.04); padding:14px; border-radius:8px; text-align:center;">
+                        <div style="font-size:20px; font-weight:700; color:#3b82f6;">${Number(stats.subscriberCount || 0).toLocaleString()}</div>
+                        <div style="font-size:12px; color:#94a3b8; margin-top:4px;">Subscribers</div>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.04); padding:14px; border-radius:8px; text-align:center;">
+                        <div style="font-size:20px; font-weight:700; color:#10b981;">${Number(stats.viewCount || 0).toLocaleString()}</div>
+                        <div style="font-size:12px; color:#94a3b8; margin-top:4px;">Total Views</div>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.04); padding:14px; border-radius:8px; text-align:center;">
+                        <div style="font-size:20px; font-weight:700; color:#f59e0b;">${Number(stats.videoCount || 0).toLocaleString()}</div>
+                        <div style="font-size:12px; color:#94a3b8; margin-top:4px;">Videos</div>
+                    </div>
+                </div>
+
+                <div>
+                    <h4 style="margin:0 0 12px 0; font-size:13px; text-transform:uppercase; letter-spacing:0.5px; color:#94a3b8;">Recent Channel Videos</h4>
+                    ${Array.isArray(videos) && videos.length > 0 ? `
+                        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px;">
+                            ${videos.map(v => {
+                                const vTitle = v.snippet?.title || 'Video';
+                                const vThumb = v.snippet?.thumbnails?.medium?.url || v.snippet?.thumbnails?.default?.url || '';
+                                const vidId = v.id?.videoId || v.id;
+                                return `
+                                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:8px; overflow:hidden;">
+                                        ${vThumb ? `<img src="${vThumb}" style="width:100%; aspect-ratio:16/9; object-fit:cover;">` : ''}
+                                        <div style="padding:10px;">
+                                            <div style="font-size:12px; font-weight:500; line-height:1.3; height:32px; overflow:hidden;" title="${vTitle}">${vTitle}</div>
+                                            ${vidId ? `<a href="https://youtu.be/${vidId}" target="_blank" style="font-size:11px; color:#3b82f6; text-decoration:none; margin-top:6px; display:inline-block;"><i class="fab fa-youtube"></i> Watch Video</a>` : ''}
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    ` : '<p style="color:#64748b; font-size:13px;">No recent videos found or YouTube Data API quota reached.</p>'}
+                </div>
+            </div>
+        `;
+        const footerHtml = `
+            <button type="button" class="btn btn-primary" onclick="closeModal(); uploadToAccount('${channelId}', '${channelName}');">
+                <i class="fas fa-cloud-upload-alt"></i> Upload Video to this Channel
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
+        `;
+        openModal(`📊 Channel Intelligence: ${channelName}`, bodyHtml, footerHtml);
+    } catch (err) {
+        openModal(`Channel Details`, `<p class="text-danger">Failed to load channel details: ${err.message}</p>`);
+    }
+}
+window.viewChannelStats = viewChannelStats;
+
 export async function deleteAccount(accountId) {
     if (!confirm('Are you sure you want to disconnect this account?')) return;
     try {
-        await api.delete(`/api/supabase/accounts/${accountId}`);
+        try {
+            await api.delete(`/api/channels/accounts/${accountId}`);
+        } catch {
+            await api.delete(`/api/supabase/accounts/${accountId}`);
+        }
         showToast('Account removed successfully', 'info');
         loadAccounts();
     } catch (err) {
         showToast('Failed to remove account: ' + err.message, 'error');
     }
 }
+window.deleteAccount = deleteAccount;
 
 export async function addAccount() {
     const email = document.getElementById('accEmail')?.value?.trim() || '';
@@ -515,10 +662,18 @@ export function closeAddAccountModal() {
 }
 
 // ===== Channel Management =====
-export async function loadChannels() {
+export async function loadChannels(accounts = []) {
     try {
-        const channels = await api.get('/api/channels');
+        let channels = [];
+        try {
+            const chs = await api.get('/api/channels');
+            if (Array.isArray(chs)) channels = chs;
+        } catch (e) {
+            console.warn('Could not fetch channels:', e);
+        }
+
         renderChannels(channels);
+        populateChannelDropdown(channels, accounts);
     } catch (err) {
         console.error('Failed to load channels:', err);
     }
@@ -533,26 +688,51 @@ export function renderChannels(channels = []) {
             <div class="empty-state">
                 <i class="fas fa-tv"></i>
                 <h3>No channels configured</h3>
-                <p>Add a channel to target upload queues and automate distribution</p>
+                <p>Connect a YouTube channel with Google OAuth above or click Add Channel.</p>
             </div>
         `;
         return;
     }
 
-    container.innerHTML = channels.map(ch => `
-        <div class="channel-card">
-            <div class="channel-avatar"><i class="fas fa-tv"></i></div>
-            <div class="channel-info">
-                <h4>${ch.name}</h4>
-                <p>${ch.handle || ch.channel_id} • ${ch.description ? ch.description.substring(0, 50) + '...' : 'No description'}</p>
+    container.innerHTML = channels.map(ch => {
+        const safeName = (ch.name || 'YouTube Channel').replace(/'/g, "\\'");
+        const safeId = (ch.channel_id || '').replace(/'/g, "\\'");
+
+        return `
+            <div class="channel-card" style="display:flex; flex-direction:column; gap:12px; padding:16px; margin-bottom:12px; border-radius:12px; border:1px solid rgba(255,255,255,0.08); background:var(--bg-card, #161b26);">
+                <div style="display:flex; align-items:center; gap:14px; width:100%;">
+                    <div class="channel-avatar" style="width:48px; height:48px; border-radius:50%; background:linear-gradient(135deg, #ef4444, #b91c1c); display:flex; align-items:center; justify-content:center; color:#fff; font-size:22px; flex-shrink:0;">
+                        <i class="fas fa-tv"></i>
+                    </div>
+                    <div class="channel-info" style="flex:1; min-width:0;">
+                        <h4 style="margin:0; font-size:16px; font-weight:600;">${ch.name}</h4>
+                        <p style="margin:4px 0 0; color:var(--text-muted, #94a3b8); font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">
+                            ${ch.handle || ch.channel_id} ${ch.description ? '• ' + ch.description.substring(0, 50) + '...' : ''}
+                        </p>
+                    </div>
+                    <div class="channel-meta" style="display:flex; gap:16px;">
+                        <div class="channel-meta-item" style="text-align:right;"><div class="number" style="font-weight:700; font-size:15px; color:#3b82f6;">${(ch.subscriber_count || 0).toLocaleString()}</div><div class="label" style="font-size:11px; color:#94a3b8;">Subscribers</div></div>
+                        <div class="channel-meta-item" style="text-align:right;"><div class="number" style="font-weight:700; font-size:15px; color:#10b981;">${(ch.video_count || 0).toLocaleString()}</div><div class="label" style="font-size:11px; color:#94a3b8;">Videos</div></div>
+                    </div>
+                    <button class="btn btn-sm btn-icon text-danger" onclick="deleteChannel('${safeId}')" title="Delete Channel" style="background:rgba(239,68,68,0.1); border:none; width:34px; height:34px; border-radius:8px; cursor:pointer;">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+
+                <div style="display:flex; gap:8px; flex-wrap:wrap; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06);">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="uploadToAccount('${safeId}', '${safeName}')">
+                        <i class="fas fa-cloud-upload-alt"></i> Upload Video
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="viewChannelStats('${safeId}', '${safeName}')">
+                        <i class="fas fa-chart-line"></i> View Stats & Videos
+                    </button>
+                    <a href="https://www.youtube.com/${ch.handle ? ch.handle : 'channel/' + ch.channel_id}" target="_blank" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px; text-decoration:none;">
+                        <i class="fab fa-youtube text-danger"></i> YouTube <i class="fas fa-external-link-alt" style="font-size:10px;"></i>
+                    </a>
+                </div>
             </div>
-            <div class="channel-meta">
-                <div class="channel-meta-item"><div class="number">${(ch.subscriber_count || 0).toLocaleString()}</div><div class="label">Subscribers</div></div>
-                <div class="channel-meta-item"><div class="number">${(ch.video_count || 0).toLocaleString()}</div><div class="label">Videos</div></div>
-            </div>
-            <button class="btn btn-sm btn-icon text-danger" onclick="deleteChannel('${ch.channel_id}')" title="Delete Channel"><i class="fas fa-trash"></i></button>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 export async function deleteChannel(channelId) {

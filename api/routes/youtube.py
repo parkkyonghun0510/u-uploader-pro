@@ -28,11 +28,25 @@ def youtube_auth():
     return jsonify({"message": "YouTube API connected", "channels": channels})
 
 
+def _get_active_youtube_api(account_id: str = None):
+    """Instantiate YouTubeAPI configured with active OAuth access token."""
+    _, _, _, _, _, _, _, YouTubeAPI, _, _, _, _, _, _ = get_classes()
+    oauth_mgr = get_oauth_manager()
+    access_token = None
+    if account_id:
+        token_entry = oauth_mgr.get_account_token(account_id)
+        if token_entry:
+            access_token = token_entry.get("access_token")
+    elif oauth_mgr._tokens:
+        latest = sorted(oauth_mgr._tokens.values(), key=lambda t: t.get('connected_at', ''), reverse=True)
+        access_token = latest[0].get("access_token")
+    return YouTubeAPI(access_token=access_token)
+
+
 @youtube_bp.route('/api/youtube/channels', methods=['GET'])
 def youtube_get_channels():
     """Fetch current user channels from YouTube API."""
-    _, _, _, _, _, _, _, YouTubeAPI, _, _, _, _, _, _ = get_classes()
-    api = YouTubeAPI()
+    api = _get_active_youtube_api(request.args.get('account_id'))
     channels = api.get_my_channels()
     return jsonify(channels)
 
@@ -40,8 +54,7 @@ def youtube_get_channels():
 @youtube_bp.route('/api/youtube/channels/<channel_id>', methods=['GET'])
 def youtube_get_channel_details(channel_id: str):
     """Fetch specific channel details from YouTube API."""
-    _, _, _, _, _, _, _, YouTubeAPI, _, _, _, _, _, _ = get_classes()
-    api = YouTubeAPI()
+    api = _get_active_youtube_api(request.args.get('account_id'))
     details = api.get_channel_details(channel_id)
     if details:
         return jsonify(details)
@@ -51,8 +64,7 @@ def youtube_get_channel_details(channel_id: str):
 @youtube_bp.route('/api/youtube/channels/<channel_id>/videos', methods=['GET'])
 def youtube_get_channel_videos(channel_id: str):
     """Fetch videos for a given channel."""
-    _, _, _, _, _, _, _, YouTubeAPI, _, _, _, _, _, _ = get_classes()
-    api = YouTubeAPI()
+    api = _get_active_youtube_api(request.args.get('account_id'))
     max_results = int(request.args.get('max_results', 50))
     videos = api.get_channel_videos(channel_id, max_results)
     return jsonify(videos)
@@ -61,8 +73,7 @@ def youtube_get_channel_videos(channel_id: str):
 @youtube_bp.route('/api/youtube/search', methods=['GET'])
 def youtube_search():
     """Search videos or channels via YouTube API."""
-    _, _, _, _, _, _, _, YouTubeAPI, _, _, _, _, _, _ = get_classes()
-    api = YouTubeAPI()
+    api = _get_active_youtube_api(request.args.get('account_id'))
     query = request.args.get('q', '')
     max_results = int(request.args.get('max_results', 10))
     search_type = request.args.get('type', 'video')
@@ -76,8 +87,7 @@ def youtube_search():
 @youtube_bp.route('/api/youtube/analytics/<channel_id>', methods=['GET'])
 def youtube_analytics(channel_id: str):
     """Fetch analytics for a channel via YouTube API."""
-    _, _, _, _, _, _, _, YouTubeAPI, _, _, _, _, _, _ = get_classes()
-    api = YouTubeAPI()
+    api = _get_active_youtube_api(request.args.get('account_id'))
     analytics = api.get_channel_analytics(channel_id)
     return jsonify(analytics)
 

@@ -92,12 +92,15 @@ export async function handleUpload(e) {
         }
     }
 
+    const channelInput = document.getElementById('uploadChannelSelect');
+
     const jobData = {
         video_path: videoInput.files[0].path || videoInput.files[0].name,
         metadata_path: metaInput && metaInput.files.length ? metaInput.files[0].name : null,
         thumbnail_path: thumbInput && thumbInput.files.length ? thumbInput.files[0].name : null,
         schedule: (scheduleInput && scheduleInput.value) ? scheduleInput.value : null,
         priority: (priorityInput && priorityInput.value) ? priorityInput.value : 'normal',
+        channel_id: (channelInput && channelInput.value) ? channelInput.value : null,
         metadata: metadata
     };
 
@@ -108,6 +111,34 @@ export async function handleUpload(e) {
     } catch (err) {
         showToast(`Upload failed: ${err.message}`, 'error');
     }
+}
+
+export function populateChannelDropdown(channels = [], accounts = []) {
+    const select = document.getElementById('uploadChannelSelect');
+    if (!select) return;
+
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">Default Studio Profile</option>';
+
+    // Add managed channels
+    channels.forEach(ch => {
+        const opt = document.createElement('option');
+        opt.value = ch.channel_id;
+        opt.textContent = `📺 ${ch.name} (${ch.handle || ch.channel_id})`;
+        select.appendChild(opt);
+    });
+
+    // Add accounts as options if no specific channel
+    accounts.forEach(acc => {
+        if (!channels.some(c => c.account_id === acc.id)) {
+            const opt = document.createElement('option');
+            opt.value = acc.id;
+            opt.textContent = `👤 ${acc.display_name} (${acc.email || 'Google Account'})`;
+            select.appendChild(opt);
+        }
+    });
+
+    if (currentVal) select.value = currentVal;
 }
 
 export async function loadHistory() {
