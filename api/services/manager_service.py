@@ -74,8 +74,14 @@ def get_google_oauth(config_dir: str = None):
     if not hasattr(get_google_oauth, '_instance'):
         _, _, _, _, _, _, _, _, GoogleOAuth2, _, _, _, _, _ = get_classes()
         get_google_oauth._instance = GoogleOAuth2(_get_config_dir(config_dir))
-        get_google_oauth._instance.add_demo_client()
     return get_google_oauth._instance
+
+
+def reset_managers():
+    """Reset singleton manager instances for test isolation."""
+    for fn in (get_config_manager, get_upload_queue, get_channel_manager, get_oauth_manager, get_google_oauth):
+        if hasattr(fn, '_instance'):
+            delattr(fn, '_instance')
 
 
 def get_supabase():

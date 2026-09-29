@@ -146,3 +146,70 @@ docker compose down
 # Check container health and resource usage
 docker stats
 ```
+
+---
+
+## 6. Deploying via Coolify (Self-Hosted PaaS)
+
+If you prefer a web-based dashboard like Vercel/Render with automated SSL certificates, automatic Git deployments, and custom domain routing, you can run **Coolify** on your server.
+
+### Step 1: Install Coolify on your VPS / Oracle Cloud VM
+
+Connect to your server via SSH and execute the official installer:
+
+```bash
+curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash
+```
+
+> **Important for Oracle Cloud Instances:**
+> Ensure incoming traffic on ports `80`, `443`, and `8000` is permitted in both:
+> 1. The Oracle Cloud Console (VCN Security List / Ingress Rules).
+> 2. The host firewall:
+>    ```bash
+>    sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+>    sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+>    sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 8000 -j ACCEPT
+>    sudo netfilter-persistent save
+>    ```
+
+Once installation finishes, visit `http://<YOUR_SERVER_IP>:8000` to set up your Coolify admin account.
+
+### Step 2: Create a New Project in Coolify
+
+1. Go to **Projects** > **+ Add Resource** > **Public / Private Git Repository**.
+2. Enter your repository URL: `https://github.com/parkkyonghun0510/u-uploader-pro.git` (or your private repo).
+3. Select **Branch**: `main`.
+4. Select **Build Pack**: **Docker Compose** (recommended) or **Dockerfile**.
+
+### Step 3: Configure Network and Port
+
+- **Port Exposes**: Set to `8080`.
+- **Domain**: Provide your custom domain or subdomain (e.g., `https://uploader.yourdomain.com`). Coolify will automatically provision a free Let's Encrypt SSL certificate and proxy traffic to port `8080`.
+
+### Step 4: Configure Persistent Storage
+
+In your Coolify application settings, go to **Storages** / **Persistent Volumes** and ensure the following mounts exist so that your YouTube authentication cookies and queue state persist across rebuilds:
+
+- `profiles` -> `/app/profiles`
+- `profile` -> `/app/profile`
+- `logs` -> `/app/logs`
+- `queue` -> `/app/queue`
+
+*(If using the Docker Compose build pack, Coolify will detect the volumes defined in `docker-compose.yml` automatically).*
+
+### Step 5: Environment Variables
+
+Under the **Environment Variables** tab, define:
+```env
+PORT=8080
+FLASK_ENV=production
+FLASK_DEBUG=0
+SECRET_KEY=your-secure-random-secret
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-supabase-key
+```
+
+### Step 6: Deploy
+
+Click **Deploy**. Coolify will build the multi-architecture image (supporting both AMD64 and ARM64 / Ampere A1), start the container with persistent volumes, and launch the service with live logs.
+

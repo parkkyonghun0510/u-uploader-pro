@@ -90,8 +90,9 @@ def youtube_oauth_config():
     oauth = get_google_oauth()
     redirect_uri = f"{request.host_url.rstrip('/')}/api/youtube/oauth/callback"
     client = oauth.get_active_client(redirect_uri) if hasattr(oauth, 'get_active_client') else None
+    is_configured = bool(client and client.get("is_valid", False))
     return jsonify({
-        "configured": bool(client),
+        "configured": is_configured,
         "client": client,
         "redirect_uri": redirect_uri
     })
@@ -112,9 +113,13 @@ def youtube_oauth_connect():
     if not redirect_uri:
         redirect_uri = f"{request.host_url.rstrip('/')}/api/youtube/oauth/callback"
 
-    if not client_id or client_id not in oauth._clients:
-        if oauth._clients:
-            client_id = list(oauth._clients.keys())[0]
+    valid_clients = oauth.get_valid_clients() if hasattr(oauth, 'get_valid_clients') else oauth._clients
+    if not client_id or client_id not in valid_clients:
+        if valid_clients:
+            sorted_clients = sorted(valid_clients.values(), key=lambda x: x.get("created_at", ""), reverse=True)
+            client_id = sorted_clients[0]["client_id"]
+        else:
+            client_id = None
 
     auth_url = oauth.get_authorization_url(client_id, redirect_uri=redirect_uri) if client_id else None
     if auth_url:

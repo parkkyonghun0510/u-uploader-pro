@@ -32,13 +32,60 @@ class GoogleOAuth2:
         self._load_clients()
 
     def _load_clients(self):
-        """Load OAuth client credentials."""
+        """Load OAuth client credentials from file and environment variables."""
+        import os
         if self.oauth_file.exists():
             try:
                 with open(self.oauth_file) as f:
                     self._clients = json.load(f)
             except:
                 pass
+
+        # Load from environment variables if set (.env), unless in test mode
+        if not self._is_testing():
+            env_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+            env_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+            if env_client_id and env_client_secret and not env_client_id.startswith("YOUR_"):
+                if env_client_id not in self._clients:
+                    self._clients[env_client_id] = {
+                        "client_id": env_client_id,
+                        "client_secret": env_client_secret,
+                        "name": os.environ.get("GOOGLE_APP_NAME", "YouTube Upload Pro"),
+                        "created_at": "1970-01-01T00:00:00"
+                    }
+
+    def _is_testing(self) -> bool:
+        """Check if running in test environment."""
+        try:
+            from flask import current_app
+            if current_app and current_app.config.get('TESTING'):
+                return True
+        except:
+            pass
+        return False
+
+    def is_valid_client(self, client_data: dict, allow_test: Optional[bool] = None) -> bool:
+        """Check if client credentials are real and not dummy test placeholders."""
+        if not client_data or not isinstance(client_data, dict):
+            return False
+        cid = str(client_data.get("client_id", "")).strip()
+        secret = str(client_data.get("client_secret", "")).strip()
+        if not cid or not secret:
+            return False
+        if secret in ("[OAUTH_CLIENT_SECRET]", "YOUR_CLIENT_SECRET") or secret.startswith("YOUR_") or cid.startswith("YOUR_"):
+            return False
+        if allow_test is None:
+            allow_test = self._is_testing()
+        if not allow_test:
+            if cid in ("demo-client-id", "test-client-id-123.apps.googleusercontent.com"):
+                return False
+            if secret in ("demo-client-secret", "test-secret-456"):
+                return False
+        return True
+
+    def get_valid_clients(self) -> dict:
+        """Get registered clients excluding test and demo placeholders."""
+        return {k: v for k, v in self._clients.items() if self.is_valid_client(v)}
 
     def _save_clients(self):
         """Save OAuth client credentials."""
@@ -57,12 +104,22 @@ class GoogleOAuth2:
 
     def get_authorization_url(self, client_id: str = None, redirect_uri: str = None) -> Optional[str]:
         """Generate Google OAuth2 authorization URL."""
-        if not client_id or client_id not in self._clients:
-            if self._clients:
-                sorted_clients = sorted(self._clients.values(), key=lambda x: x.get("created_at", ""), reverse=True)
-                client_id = sorted_clients[0]["client_id"]
-            else:
+        valid_clients = self.get_valid_clients()
+
+        # If client_id is provided and valid
+        if client_id and client_id in self._clients:
+            if not self.is_valid_client(self._clients[client_id]) and valid_clients:
+                sorted_valid = sorted(valid_clients.values(), key=lambda x: x.get("created_at", ""), reverse=True)
+                client_id = sorted_valid[0]["client_id"]
+        else:
+            candidates = valid_clients if valid_clients else self._clients
+            if not candidates:
                 return None
+            sorted_clients = sorted(candidates.values(), key=lambda x: x.get("created_at", ""), reverse=True)
+            client_id = sorted_clients[0]["client_id"]
+
+        if not client_id or not self.is_valid_client(self._clients.get(client_id, {})):
+            return None
 
         state = secrets.token_urlsafe(32)
         effective_redirect = self._get_redirect_uri(redirect_uri)
@@ -186,9 +243,11 @@ class GoogleOAuth2:
 
     def get_active_client(self, redirect_uri: str = None) -> Optional[dict]:
         """Get active OAuth client credentials status."""
-        if not self._clients:
+        valid_clients = self.get_valid_clients()
+        candidates = valid_clients if valid_clients else self._clients
+        if not candidates:
             return None
-        sorted_clients = sorted(self._clients.values(), key=lambda x: x.get("created_at", ""), reverse=True)
+        sorted_clients = sorted(candidates.values(), key=lambda x: x.get("created_at", ""), reverse=True)
         c = sorted_clients[0]
         secret = c.get("client_secret", "")
         masked_secret = f"{secret[:4]}...{secret[-4:]}" if len(secret) > 8 else "••••••••"
@@ -197,7 +256,8 @@ class GoogleOAuth2:
             "client_secret_masked": masked_secret,
             "name": c.get("name", "YouTube Upload Pro"),
             "redirect_uri": self._get_redirect_uri(redirect_uri),
-            "created_at": c.get("created_at")
+            "created_at": c.get("created_at"),
+            "is_valid": self.is_valid_client(c)
         }
 
     def get_clients(self) -> dict:

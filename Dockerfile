@@ -22,12 +22,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Geckodriver directly to /usr/local/bin
-RUN GECKO_VERSION=$(curl -s https://api.github.com/repos/mozilla/geckodriver/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/' || echo "0.34.0") && \
-    wget -q "https://github.com/mozilla/geckodriver/releases/download/v${GECKO_VERSION}/geckodriver-v${GECKO_VERSION}-linux64.tar.gz" -O /tmp/geckodriver.tar.gz && \
+# Install Geckodriver directly to /usr/local/bin (supports both x86_64 and arm64 / Oracle Ampere A1)
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "arm64" ]; then GECKO_ARCH="linux-aarch64"; else GECKO_ARCH="linux64"; fi && \
+    GECKO_VERSION=$(curl -s https://api.github.com/repos/mozilla/geckodriver/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/' || echo "0.34.0") && \
+    wget -q "https://github.com/mozilla/geckodriver/releases/download/v${GECKO_VERSION}/geckodriver-v${GECKO_VERSION}-${GECKO_ARCH}.tar.gz" -O /tmp/geckodriver.tar.gz && \
     tar -xzf /tmp/geckodriver.tar.gz -C /usr/local/bin/ && \
     chmod +x /usr/local/bin/geckodriver && \
     rm -f /tmp/geckodriver.tar.gz
+
 
 # Set working directory
 WORKDIR /app

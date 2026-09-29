@@ -1,15 +1,24 @@
 """Unit tests for the modular Flask API."""
 import unittest
+import tempfile
+import shutil
 from api import create_app
-from api.services.manager_service import get_config_manager, get_upload_queue
+from api.services.manager_service import get_config_manager, get_upload_queue, reset_managers
 
 
 class ApiTestCase(unittest.TestCase):
     """Test suite for modular Flask API endpoints."""
 
     def setUp(self):
+        reset_managers()
+        self.test_dir = tempfile.mkdtemp()
         self.app = create_app('testing')
+        self.app.config['CONFIG_DIR'] = self.test_dir
         self.client = self.app.test_client()
+
+    def tearDown(self):
+        reset_managers()
+        shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_routes_count(self):
         """Verify that all 53 expected routes are registered."""
