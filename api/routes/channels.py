@@ -375,16 +375,38 @@ def get_batches():
 def create_batch():
     """Create and execute a bulk multi-channel upload batch."""
     data = request.json or {}
-    try:
-        batch = create_bulk_batch(
-            video_paths=data.get('video_paths', []),
-            channel_ids=data.get('channel_ids', []),
-            metadata={'template_id': data.get('template_id')} if data.get('template_id') else None,
-            priority=data.get('priority', 'normal')
-        )
-        return jsonify(batch), 201
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+    cm = get_channel_manager()
+
+    video_paths = data.get('video_paths', [])
+    channel_ids = data.get('channel_ids', [])
+    channel_id = data.get('channel_id') or (channel_ids[0] if channel_ids else '')
+
+    if video_paths and channel_ids:
+        try:
+            create_bulk_batch(
+                video_paths=video_paths,
+                channel_ids=channel_ids,
+                metadata={'template_id': data.get('template_id')} if data.get('template_id') else None,
+                priority=data.get('priority', 'normal')
+            )
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
+    name = data.get('name', f"Batch {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    total_videos = data.get('total_videos', len(video_paths))
+    batch = cm.create_batch(
+        channel_id=channel_id,
+        account_id=data.get('account_id', ''),
+        name=name,
+        video_paths=video_paths,
+        template_id=data.get('template_id'),
+        priority=data.get('priority', 'normal')
+    )
+    if total_videos > 0:
+        batch.total_videos = total_videos
+        cm._save_batches()
+
+    return jsonify(batch.to_dict()), 201
 
 
 @channels_bp.route('/api/batches/<batch_id>', methods=['GET'])
@@ -395,4 +417,14 @@ def get_batch(batch_id: str):
     batch = cm.get_batch(batch_id)
     if batch:
         return jsonify(batch.to_dict())
+    return jsonify({"error": "Batch not found"}), 404
+
+
+@channels_bp.route('/api/batches/<batch_id>', methods=['DELETE'])
+@require_auth
+def delete_batch(batch_id: str):
+    """Delete a bulk upload batch from history."""
+    cm = get_channel_manager()
+    if cm.delete_batch(batch_id):
+        return jsonify({"message": "Batch deleted successfully"})
     return jsonify({"error": "Batch not found"}), 404

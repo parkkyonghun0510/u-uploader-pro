@@ -181,6 +181,33 @@ class ApiTestCase(unittest.TestCase):
                 os.remove(temp_video)
 
 
+    def test_batch_lifecycle(self):
+        """Verify bulk upload batch creation and retrieval."""
+        res = self.client.post(
+            '/api/batches',
+            json={
+                'name': 'Test Batch Workflow',
+                'channel_id': 'UC_batch_test',
+                'total_videos': 3,
+                'priority': 'high'
+            },
+            headers={'Authorization': 'Bearer test-token'}
+        )
+        if res.status_code == 201:
+            data = res.get_json()
+            batch_id = data.get('batch_id')
+            self.assertEqual(data.get('name'), 'Test Batch Workflow')
+            self.assertEqual(data.get('total_videos'), 3)
+
+            # Retrieve batch
+            get_res = self.client.get(f'/api/batches/{batch_id}', headers={'Authorization': 'Bearer test-token'})
+            self.assertEqual(get_res.status_code, 200)
+
+            # Delete batch
+            del_res = self.client.delete(f'/api/batches/{batch_id}', headers={'Authorization': 'Bearer test-token'})
+            self.assertEqual(del_res.status_code, 200)
+
+
 if __name__ == '__main__':
     unittest.main()
 

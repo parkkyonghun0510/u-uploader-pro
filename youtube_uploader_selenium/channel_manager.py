@@ -247,6 +247,13 @@ class ChannelManager:
             batch.failed_count = failed
             self._save_batches()
 
+    def delete_batch(self, batch_id: str) -> bool:
+        if batch_id in self._batches:
+            del self._batches[batch_id]
+            self._save_batches()
+            return True
+        return False
+
     # ---- Dashboard Stats ----
     def get_dashboard_stats(self) -> dict:
         all_channels = self.get_all_channels()

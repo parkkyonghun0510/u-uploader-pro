@@ -12,6 +12,7 @@ from .manager_service import (
     get_supabase_client,
     get_oauth_manager,
     get_google_oauth,
+    get_channel_manager,
 )
 
 
@@ -213,6 +214,35 @@ def _execute_selenium_upload(job):
         logger.warning(f"Upload {job.job_id} failed via Selenium")
 
 
+def _update_batch_progress(job):
+    """If this job belongs to a bulk upload batch, update batch statistics in ChannelManager."""
+    try:
+        batch_id = (job.metadata or {}).get("batch_id")
+        if not batch_id:
+            return
+        channel_manager = get_channel_manager()
+        batch = channel_manager.get_batch(batch_id)
+        if not batch:
+            return
+        _, _, UploadStatus, _, _, _, _, _, _, _, _, _, _, _ = get_classes()
+        if job.status == UploadStatus.COMPLETED:
+            batch.uploaded_count = (batch.uploaded_count or 0) + 1
+        elif job.status == UploadStatus.FAILED and (job.retry_count >= job.max_retries or not job.max_retries):
+            batch.failed_count = (batch.failed_count or 0) + 1
+
+        total = batch.total_videos or 1
+        if (batch.uploaded_count + batch.failed_count) >= total:
+            batch.status = "completed" if (batch.failed_count or 0) == 0 else "completed_with_errors"
+            batch.completed_at = datetime.now().isoformat()
+        else:
+            batch.status = "running"
+            if not batch.started_at:
+                batch.started_at = datetime.now().isoformat()
+        channel_manager._save_batches()
+    except Exception as e:
+        logger.warning(f"Failed to update batch progress for job {job.job_id}: {e}")
+
+
 def start_upload_thread(job_id: str):
     """Background worker thread to run YouTube upload via YouTube Data API v3 or Selenium."""
     queue = get_upload_queue()
@@ -254,6 +284,8 @@ def start_upload_thread(job_id: str):
             threading.Timer(10, start_upload_thread, args=[job_id]).start()
 
     finally:
+        _update_batch_progress(job)
         broadcast_progress(job_id)
         save_job_history(job)
+
 

@@ -967,19 +967,45 @@ export function renderBatches(batches = []) {
     }
 
     container.innerHTML = batches.map(b => {
-        const percent = b.total_videos > 0 ? Math.round((b.uploaded_count / b.total_videos) * 100) : 0;
+        const total = b.total_videos || (Array.isArray(b.video_paths) ? b.video_paths.length : 0);
+        const percent = total > 0 ? Math.min(100, Math.round(((b.uploaded_count || 0) / total) * 100)) : 0;
         return `
             <div class="batch-card" style="margin-bottom:12px; padding:16px; border-radius:10px; background:var(--bg-card,#161b26); border:1px solid rgba(255,255,255,0.06);">
                 <div style="display:flex;justify-content:space-between;align-items:center">
-                    <h4 style="margin:0;">${b.name}</h4>
-                    <span class="status-badge status-${b.status}">${b.status}</span>
+                    <div>
+                        <h4 style="margin:0; font-size:15px; font-weight:600;"><i class="fas fa-boxes text-primary"></i> ${b.name}</h4>
+                        <small class="text-muted">${b.created_at ? new Date(b.created_at).toLocaleString() : ''}</small>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="status-badge status-${b.status}">${b.status}</span>
+                        <button type="button" class="btn btn-sm text-danger" style="background:none; border:none; cursor:pointer;" onclick="deleteBatch('${b.batch_id}')" title="Delete Batch">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
                 </div>
-                <div class="batch-progress" style="margin:10px 0;"><div class="batch-progress-bar" style="width: ${percent}%;"></div></div>
-                <p class="text-muted" style="margin:0; font-size:12px;">${b.uploaded_count || 0}/${b.total_videos || 0} videos uploaded • ${b.failed_count || 0} failed</p>
+                <div class="batch-progress" style="margin:12px 0 8px 0; background:rgba(255,255,255,0.08); border-radius:6px; height:8px; overflow:hidden;">
+                    <div class="batch-progress-bar" style="width: ${percent}%; height:100%; background:var(--primary, #3b82f6); transition:width 0.3s ease;"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px;" class="text-muted">
+                    <span>${b.uploaded_count || 0}/${total} uploaded • ${b.failed_count || 0} failed</span>
+                    <span>${percent}%</span>
+                </div>
             </div>
         `;
     }).join('');
 }
+
+export async function deleteBatch(batchId) {
+    if (!confirm('Are you sure you want to delete this batch from history?')) return;
+    try {
+        await api.delete(`/api/batches/${batchId}`);
+        showToast('Batch removed from history', 'info');
+        loadBatches();
+    } catch (err) {
+        showToast('Failed to delete batch: ' + err.message, 'error');
+    }
+}
+window.deleteBatch = deleteBatch;
 
 export async function loadBatchChannels() {
     try {
@@ -1025,15 +1051,34 @@ export async function handleBulkUpload(e) {
     }
 
     try {
-        showToast(`Queueing batch "${name}" (${selectedBatchFiles.length} videos)...`, 'info');
+        showToast(`Initializing batch "${name}"...`, 'info');
 
-        for (const file of selectedBatchFiles) {
+        // 1. Create batch record in ChannelManager
+        const batch = await api.post('/api/batches', {
+            name,
+            channel_id: channelId,
+            template_id: templateId,
+            priority: priority,
+            total_videos: selectedBatchFiles.length
+        });
+
+        const batchId = batch.batch_id || '';
+        showToast(`Queueing ${selectedBatchFiles.length} videos...`, 'info');
+
+        // 2. Dispatch each video file as an UploadJob linked to batch_id
+        for (let i = 0; i < selectedBatchFiles.length; i++) {
+            const file = selectedBatchFiles[i];
             const formData = new FormData();
             formData.append('video', file);
             formData.append('channel_id', channelId);
             formData.append('priority', priority);
             if (templateId) formData.append('template_id', templateId);
-            formData.append('metadata', JSON.stringify({ batch_name: name }));
+            formData.append('metadata', JSON.stringify({
+                batch_id: batchId,
+                batch_name: name,
+                video_index: i + 1,
+                total_videos: selectedBatchFiles.length
+            }));
             await api.post('/api/jobs', formData);
         }
 
@@ -1107,7 +1152,8 @@ Object.assign(window, {
     loadAccounts,
     loadChannels,
     loadTemplates,
-    loadBatches
+    loadBatches,
+    deleteBatch
 });
 
 export { saveYouTubeApiKey, loadYouTubeChannels, searchYouTubeVideos };
