@@ -42,6 +42,10 @@ def create_app(config_name: str = 'default') -> Flask:
     cors.init_app(app)
     socketio.init_app(app)
 
+    # Respect reverse proxy headers (e.g. Render, Nginx) for HTTPS scheme and host
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
     # Register blueprints
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp)

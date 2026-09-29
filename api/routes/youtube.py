@@ -82,13 +82,26 @@ def youtube_analytics(channel_id: str):
     return jsonify(analytics)
 
 
+def _build_redirect_uri(req, custom_uri: str = None) -> str:
+    """Safely build OAuth redirect URI respecting proxy headers and env overrides."""
+    if custom_uri:
+        return custom_uri
+    import os
+    env_redirect = os.environ.get("OAUTH_REDIRECT_URI")
+    if env_redirect:
+        return env_redirect
+    proto = req.headers.get('X-Forwarded-Proto', req.scheme)
+    host = req.headers.get('X-Forwarded-Host', req.host)
+    return f"{proto}://{host}/api/youtube/oauth/callback"
+
+
 # ============ OAUTH2 ENDPOINTS ============
 
 @youtube_bp.route('/api/youtube/oauth/config', methods=['GET'])
 def youtube_oauth_config():
     """Check OAuth setup status and retrieve dynamic redirect URI."""
     oauth = get_google_oauth()
-    redirect_uri = f"{request.host_url.rstrip('/')}/api/youtube/oauth/callback"
+    redirect_uri = _build_redirect_uri(request)
     client = oauth.get_active_client(redirect_uri) if hasattr(oauth, 'get_active_client') else None
     is_configured = bool(client and client.get("is_valid", False))
     return jsonify({
@@ -110,8 +123,7 @@ def youtube_oauth_connect():
         if not redirect_uri:
             redirect_uri = request.json.get('redirect_uri')
 
-    if not redirect_uri:
-        redirect_uri = f"{request.host_url.rstrip('/')}/api/youtube/oauth/callback"
+    redirect_uri = _build_redirect_uri(request, redirect_uri)
 
     valid_clients = oauth.get_valid_clients() if hasattr(oauth, 'get_valid_clients') else oauth._clients
     if not client_id or client_id not in valid_clients:
@@ -140,7 +152,7 @@ def youtube_oauth_callback():
     code = request.args.get('code')
     client_id = request.args.get('client_id')
     state = request.args.get('state')
-    redirect_uri = request.args.get('redirect_uri') or f"{request.host_url.rstrip('/')}/api/youtube/oauth/callback"
+    redirect_uri = _build_redirect_uri(request, request.args.get('redirect_uri'))
 
     if not code:
         return jsonify({"error": "No authorization code provided"}), 400
@@ -148,8 +160,20 @@ def youtube_oauth_callback():
     oauth = get_google_oauth()
     token_data = oauth.exchange_code(code, client_id=client_id, redirect_uri=redirect_uri, state=state)
 
+    wants_html = request.accept_mimetypes.accept_html and 'application/json' not in request.headers.get('Accept', '')
+
     if not token_data or "error" in token_data:
-        return jsonify({"error": token_data.get("error", "Token exchange failed") if token_data else "Failed to exchange code"}), 400
+        err_msg = token_data.get("error", "Token exchange failed") if token_data else "Failed to exchange code"
+        if wants_html:
+            return f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Connection Failed</title>
+<style>body{{background:#0f172a;color:#f8fafc;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}}
+.card{{background:#1e293b;border:1px solid #ef4444;border-radius:12px;padding:32px;text-align:center;max-width:440px;}}
+h2{{color:#ef4444;margin:0 0 12px;}}p{{color:#94a3b8;font-size:14px;margin-bottom:20px;}}
+a{{display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;}}</style></head>
+<body><div class="card"><h2>Authentication Failed</h2><p>{err_msg}</p><a href="/">Return to Dashboard</a></div></body></html>""", 400
+        return jsonify({"error": err_msg}), 400
 
     # Save tokens to account
     manager = get_oauth_manager()
@@ -185,6 +209,35 @@ def youtube_oauth_callback():
             description=youtube_channel.get("snippet", {}).get("description", ""),
             is_managed=True
         )
+
+    if wants_html:
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>YouTube Connected</title>
+<style>
+body{{background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}}
+.card{{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:32px;text-align:center;max-width:440px;box-shadow:0 10px 25px rgba(0,0,0,0.5);}}
+.icon{{font-size:48px;color:#22c55e;margin-bottom:12px;}}
+h2{{margin:0 0 8px;font-size:22px;}}
+p{{color:#94a3b8;font-size:14px;margin:0 0 20px;}}
+.btn{{display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:500;}}
+</style></head>
+<body>
+<div class="card">
+  <div class="icon">✓</div>
+  <h2>YouTube Account Connected!</h2>
+  <p>Connected as <b>{channel_name}</b> ({email or 'Authorized'}). Returning to dashboard...</p>
+  <a href="/" class="btn">Return to Dashboard</a>
+</div>
+<script>
+if(window.opener){{
+  window.opener.postMessage({{type:'OAUTH_COMPLETE',status:'success',message:'YouTube account connected successfully!'}},'*');
+  setTimeout(function(){{window.close();}},1200);
+}}else{{
+  setTimeout(function(){{window.location.href='/';}},1800);
+}}
+</script>
+</body></html>"""
 
     return jsonify({
         "message": "YouTube account connected successfully!",

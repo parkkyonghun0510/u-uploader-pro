@@ -240,27 +240,44 @@ export async function connectGoogle() {
             showToast('Google OAuth opened. Please authorize access in popup.', 'info');
             const clientId = data.client_id || '';
 
+            const onMessage = (event) => {
+                if (event.data && event.data.type === 'OAUTH_COMPLETE') {
+                    clearInterval(checkAuth);
+                    window.removeEventListener('message', onMessage);
+                    if (event.data.status === 'success') {
+                        showToast(event.data.message || 'YouTube account connected successfully!', 'success');
+                    } else {
+                        showToast(event.data.error || 'Failed to connect YouTube account', 'error');
+                    }
+                    try { if (popup && !popup.closed) popup.close(); } catch {}
+                    loadAccounts();
+                }
+            };
+            window.addEventListener('message', onMessage);
+
             const checkAuth = setInterval(async () => {
                 if (!popup || popup.closed) {
                     clearInterval(checkAuth);
+                    window.removeEventListener('message', onMessage);
                     loadAccounts();
                     return;
                 }
                 try {
                     const url = popup.location.href;
                     if (url.includes('/api/youtube/oauth/callback')) {
+                        clearInterval(checkAuth);
+                        window.removeEventListener('message', onMessage);
                         const code = new URL(url).searchParams.get('code');
                         const stateParam = new URL(url).searchParams.get('state');
                         const callbackRes = await api.get(`/api/youtube/oauth/callback?code=${code}&state=${stateParam}&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`);
                         if (callbackRes.message) {
                             showToast(callbackRes.message, 'success');
-                            popup.close();
+                            try { popup.close(); } catch {}
                             loadAccounts();
                         } else if (callbackRes.error) {
                             showToast(`Error: ${callbackRes.error}`, 'error');
-                            popup.close();
+                            try { popup.close(); } catch {}
                         }
-                        clearInterval(checkAuth);
                     }
                 } catch {
                     // Cross-origin restriction while Google flow is in progress
