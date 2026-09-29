@@ -80,13 +80,17 @@ class ChannelManager:
 
     # ---- Accounts ----
     def add_account(self, email: str, display_name: str, account_type: str = "personal",
-                    access_token: Optional[str] = None, refresh_token: Optional[str] = None) -> YouTubeAccount:
-        account_id = str(uuid.uuid4())
+                    access_token: Optional[str] = None, refresh_token: Optional[str] = None,
+                    account_id: Optional[str] = None,
+                    google_profile_image: Optional[str] = None) -> YouTubeAccount:
+        if not account_id:
+            account_id = str(uuid.uuid4())
         account = YouTubeAccount(
             account_id=account_id,
             email=email,
             display_name=display_name,
             account_type=AccountType(account_type),
+            google_profile_image=google_profile_image,
             access_token=access_token,
             refresh_token=refresh_token,
             created_at=datetime.now().isoformat()
@@ -130,7 +134,9 @@ class ChannelManager:
 
     # ---- Channels ----
     def add_channel(self, account_id: str, channel_id: str, name: str, handle: str = "",
-                    description: str = "", is_managed: bool = False) -> YouTubeChannel:
+                    description: str = "", is_managed: bool = False,
+                    subscriber_count: int = 0, video_count: int = 0, view_count: int = 0,
+                    custom_url: Optional[str] = None) -> YouTubeChannel:
         channel = YouTubeChannel(
             channel_id=channel_id,
             account_id=account_id,
@@ -138,6 +144,10 @@ class ChannelManager:
             handle=handle,
             description=description,
             is_managed=is_managed,
+            subscriber_count=subscriber_count,
+            video_count=video_count,
+            view_count=view_count,
+            custom_url=custom_url,
             created_at=datetime.now().isoformat()
         )
         self._channels[channel_id] = channel

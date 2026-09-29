@@ -258,6 +258,7 @@ export async function connectGoogle() {
                     if (popup && !popup.closed) popup.close();
                 } catch (e) {}
                 loadAccounts();
+                loadChannels();
             };
 
             // 1. BroadcastChannel (safe across windows on same origin, immune to COOP)
@@ -456,6 +457,11 @@ export function renderAccounts(accounts = []) {
                 <div class="empty-icon-ring"><i class="fab fa-youtube"></i></div>
                 <h3>No channels connected</h3>
                 <p>Click "Connect with Google" above to link your YouTube channel and unlock upload and analytics features.</p>
+                <div style="margin-top:16px;">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="connectGoogle()">
+                        <i class="fab fa-google"></i> Connect with Google Now
+                    </button>
+                </div>
             </div>
         `;
         return;
@@ -466,48 +472,45 @@ export function renderAccounts(accounts = []) {
         const safeName = (acc.display_name || 'YouTube Account').replace(/'/g, "\\'");
         const safeId = (acc.id || acc.channel_id || '').replace(/'/g, "\\'");
         const channelId = acc.channel_id || (acc.youtube_channel && acc.youtube_channel.id) || '';
+        const profileImg = acc.google_profile_image || (acc.youtube_channel?.snippet?.thumbnails?.default?.url) || '';
 
         return `
-            <div class="account-card" style="display:flex; flex-direction:column; gap:12px; padding:16px; margin-bottom:12px; border-radius:12px; border:1px solid rgba(255,255,255,0.08); background:var(--bg-card, #161b26);">
-                <div style="display:flex; align-items:center; gap:14px; width:100%;">
-                    <div class="account-avatar" style="width:48px; height:48px; border-radius:50%; background:linear-gradient(135deg, #ef4444, #dc2626); display:flex; align-items:center; justify-content:center; color:#fff; font-size:22px; flex-shrink:0;">
-                        <i class="fab fa-youtube"></i>
+            <div class="account-card">
+                <div class="card-top-row">
+                    <div class="account-avatar">
+                        ${profileImg ? `<img src="${profileImg}" class="card-avatar-img" alt="${safeName}">` : `<i class="fab fa-youtube"></i>`}
                     </div>
-                    <div class="account-info" style="flex:1; min-width:0;">
+                    <div class="account-info">
                         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                            <h4 style="margin:0; font-size:16px; font-weight:600;">${acc.display_name || 'YouTube Account'}</h4>
-                            <span class="status-badge ${acc.is_active !== false ? 'status-completed' : 'status-failed'}" style="font-size:11px;">
+                            <h4>${acc.display_name || 'YouTube Account'}</h4>
+                            <span class="status-badge ${acc.is_active !== false ? 'status-completed' : 'status-failed'}">
                                 ${acc.is_active !== false ? 'Active' : 'Inactive'}
                             </span>
-                            <span class="account-badge ${acc.account_type || 'personal'}" style="font-size:10px;">${(acc.account_type || 'personal').toUpperCase()}</span>
+                            <span class="account-badge ${acc.account_type || 'personal'}">${(acc.account_type || 'personal').toUpperCase()}</span>
                         </div>
-                        <p style="margin:4px 0 0; color:var(--text-muted, #94a3b8); font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">
-                            ${acc.email || 'Google Connected Channel'}
-                        </p>
+                        <p>${acc.email || 'Google Connected Channel'}</p>
                         <div class="engine-track-badges" style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
-                            <span class="track-badge ${isOAuth ? 'track-badge-oauth' : 'track-badge-inactive'}" style="font-size:11px; padding:2px 8px; border-radius:4px; background:rgba(34,197,94,0.15); color:#22c55e;">
-                                <i class="fab fa-google"></i> ${isOAuth ? 'Google OAuth: Connected' : 'Google: Offline'}
+                            <span class="track-badge ${isOAuth ? 'track-badge-oauth' : 'track-badge-inactive'}">
+                                <i class="fab fa-google"></i> ${isOAuth ? 'Google OAuth: Active' : 'Offline'}
                             </span>
                         </div>
                     </div>
-                    <div style="display:flex; align-items:center; gap:6px;">
-                        <button class="btn btn-sm btn-icon text-danger" onclick="deleteAccount('${safeId}')" title="Disconnect Account" style="background:rgba(239,68,68,0.1); border:none; width:34px; height:34px; border-radius:8px; cursor:pointer;">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
+                    <button class="btn btn-sm btn-icon text-danger" onclick="deleteAccount('${safeId}')" title="Disconnect Account" style="background:rgba(239,68,68,0.1); border:none; width:34px; height:34px; border-radius:8px; cursor:pointer;">
+                        <i class="fas fa-trash"></i>
+                    </button>
                 </div>
 
                 <!-- Action Toolbar for Connected Account -->
-                <div style="display:flex; gap:8px; flex-wrap:wrap; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06);">
-                    <button type="button" class="btn btn-primary btn-sm" onclick="uploadToAccount('${safeId}', '${safeName}')">
+                <div class="card-actions-bar">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="uploadToAccount('${channelId || safeId}', '${safeName}')">
                         <i class="fas fa-cloud-upload-alt"></i> Upload Video
                     </button>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="viewChannelStats('${channelId || safeId}', '${safeName}')">
-                        <i class="fas fa-chart-line"></i> View Stats & Videos
+                        <i class="fas fa-chart-line"></i> Intelligence
                     </button>
                     ${channelId ? `
                         <a href="https://www.youtube.com/channel/${channelId}" target="_blank" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px; text-decoration:none;">
-                            <i class="fab fa-youtube text-danger"></i> Open on YouTube <i class="fas fa-external-link-alt" style="font-size:10px;"></i>
+                            <i class="fab fa-youtube text-danger"></i> YouTube <i class="fas fa-external-link-alt" style="font-size:10px;"></i>
                         </a>
                     ` : ''}
                 </div>
@@ -718,9 +721,14 @@ export function renderChannels(channels = []) {
     if (!Array.isArray(channels) || channels.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
-                <i class="fas fa-tv"></i>
+                <div class="empty-icon-ring"><i class="fas fa-tv"></i></div>
                 <h3>No channels configured</h3>
                 <p>Connect a YouTube channel with Google OAuth above or click Add Channel.</p>
+                <div style="margin-top:16px;">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="openAddAccountModal()">
+                        <i class="fas fa-plus"></i> Add Channel
+                    </button>
+                </div>
             </div>
         `;
         return;
@@ -729,34 +737,46 @@ export function renderChannels(channels = []) {
     container.innerHTML = channels.map(ch => {
         const safeName = (ch.name || 'YouTube Channel').replace(/'/g, "\\'");
         const safeId = (ch.channel_id || '').replace(/'/g, "\\'");
+        const subs = ch.subscriber_count || 0;
+        const vids = ch.video_count || 0;
+        const views = ch.view_count || 0;
 
         return `
-            <div class="channel-card" style="display:flex; flex-direction:column; gap:12px; padding:16px; margin-bottom:12px; border-radius:12px; border:1px solid rgba(255,255,255,0.08); background:var(--bg-card, #161b26);">
-                <div style="display:flex; align-items:center; gap:14px; width:100%;">
-                    <div class="channel-avatar" style="width:48px; height:48px; border-radius:50%; background:linear-gradient(135deg, #ef4444, #b91c1c); display:flex; align-items:center; justify-content:center; color:#fff; font-size:22px; flex-shrink:0;">
+            <div class="channel-card">
+                <div class="card-top-row">
+                    <div class="channel-avatar">
                         <i class="fas fa-tv"></i>
                     </div>
-                    <div class="channel-info" style="flex:1; min-width:0;">
-                        <h4 style="margin:0; font-size:16px; font-weight:600;">${ch.name}</h4>
-                        <p style="margin:4px 0 0; color:var(--text-muted, #94a3b8); font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">
-                            ${ch.handle || ch.channel_id} ${ch.description ? '• ' + ch.description.substring(0, 50) + '...' : ''}
-                        </p>
-                    </div>
-                    <div class="channel-meta" style="display:flex; gap:16px;">
-                        <div class="channel-meta-item" style="text-align:right;"><div class="number" style="font-weight:700; font-size:15px; color:#3b82f6;">${(ch.subscriber_count || 0).toLocaleString()}</div><div class="label" style="font-size:11px; color:#94a3b8;">Subscribers</div></div>
-                        <div class="channel-meta-item" style="text-align:right;"><div class="number" style="font-weight:700; font-size:15px; color:#10b981;">${(ch.video_count || 0).toLocaleString()}</div><div class="label" style="font-size:11px; color:#94a3b8;">Videos</div></div>
+                    <div class="channel-info">
+                        <h4>${ch.name}</h4>
+                        <p>${ch.handle || ch.channel_id} ${ch.description ? '• ' + ch.description.substring(0, 45) + '...' : ''}</p>
                     </div>
                     <button class="btn btn-sm btn-icon text-danger" onclick="deleteChannel('${safeId}')" title="Delete Channel" style="background:rgba(239,68,68,0.1); border:none; width:34px; height:34px; border-radius:8px; cursor:pointer;">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
 
-                <div style="display:flex; gap:8px; flex-wrap:wrap; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06);">
+                <div class="card-metrics-grid">
+                    <div class="card-metric-item">
+                        <span class="card-metric-val" style="color:#60a5fa;">${subs.toLocaleString()}</span>
+                        <span class="card-metric-lbl">Subscribers</span>
+                    </div>
+                    <div class="card-metric-item">
+                        <span class="card-metric-val" style="color:#34d399;">${vids.toLocaleString()}</span>
+                        <span class="card-metric-lbl">Videos</span>
+                    </div>
+                    <div class="card-metric-item">
+                        <span class="card-metric-val" style="color:#a78bfa;">${views.toLocaleString()}</span>
+                        <span class="card-metric-lbl">Views</span>
+                    </div>
+                </div>
+
+                <div class="card-actions-bar">
                     <button type="button" class="btn btn-primary btn-sm" onclick="uploadToAccount('${safeId}', '${safeName}')">
                         <i class="fas fa-cloud-upload-alt"></i> Upload Video
                     </button>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="viewChannelStats('${safeId}', '${safeName}')">
-                        <i class="fas fa-chart-line"></i> View Stats & Videos
+                        <i class="fas fa-chart-line"></i> Intelligence
                     </button>
                     <a href="https://www.youtube.com/${ch.handle ? ch.handle : 'channel/' + ch.channel_id}" target="_blank" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px; text-decoration:none;">
                         <i class="fab fa-youtube text-danger"></i> YouTube <i class="fas fa-external-link-alt" style="font-size:10px;"></i>
@@ -826,9 +846,14 @@ export function renderTemplates(templates = []) {
     if (!Array.isArray(templates) || templates.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
-                <i class="fas fa-layer-group"></i>
-                <h3>No templates yet</h3>
-                <p>Standardize recurring titles, descriptions, and tag presets</p>
+                <div class="empty-icon-ring"><i class="fas fa-layer-group"></i></div>
+                <h3>No metadata templates yet</h3>
+                <p>Create templates to standardize titles, descriptions, and tags across uploads.</p>
+                <div style="margin-top:16px;">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="openAddTemplateModal()">
+                        <i class="fas fa-plus"></i> Create First Template
+                    </button>
+                </div>
             </div>
         `;
         return;
@@ -838,12 +863,21 @@ export function renderTemplates(templates = []) {
         const tags = Array.isArray(t.tags) ? t.tags : [];
         return `
             <div class="template-card">
-                <h4>${t.name}</h4>
-                <p>${t.description_template ? t.description_template.substring(0, 80) + '...' : 'No description template'}</p>
-                <div class="template-tags">${tags.map(tag => `<span class="tag">${tag}</span>`).join('')}</div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
-                    <small class="text-muted">${t.privacy_status || 'private'} • Category ${t.category || '22'}</small>
-                    <button class="btn btn-sm btn-icon text-danger" onclick="deleteTemplate('${t.template_id}')" title="Delete Template"><i class="fas fa-trash"></i></button>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+                    <div style="flex:1; min-width:0;">
+                        <h4 style="margin:0 0 6px 0; font-size:16px; font-weight:700; color:var(--text-primary);">${t.name}</h4>
+                        <p style="margin:0; font-size:13px; color:var(--text-muted); line-height:1.4;">${t.description_template ? t.description_template.substring(0, 85) + '...' : 'No description template'}</p>
+                    </div>
+                    <button class="btn btn-sm btn-icon text-danger" onclick="deleteTemplate('${t.template_id}')" title="Delete Template" style="background:rgba(239,68,68,0.1); border:none; width:32px; height:32px; border-radius:8px; cursor:pointer;">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+                <div class="template-tags" style="display:flex; flex-wrap:wrap; gap:6px; margin:12px 0;">
+                    ${tags.length > 0 ? tags.map(tag => `<span class="tag" style="background:rgba(59,130,246,0.12); color:#60a5fa; padding:2px 8px; border-radius:6px; font-size:11px;">#${tag}</span>`).join('') : '<span style="font-size:12px; color:var(--text-muted);">No tag presets</span>'}
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; padding-top:10px; border-top:1px solid rgba(255,255,255,0.06); font-size:12px;">
+                    <span class="badge" style="background:rgba(255,255,255,0.06); color:var(--text-secondary); text-transform:capitalize;">${t.privacy_status || 'private'}</span>
+                    <span class="text-muted">Category ${t.category || '22'}</span>
                 </div>
             </div>
         `;

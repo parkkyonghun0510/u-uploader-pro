@@ -1,5 +1,7 @@
 """YouTube Data API and Google OAuth2 integration routes."""
+from datetime import datetime
 from flask import Blueprint, request, jsonify
+from api.extensions import logger
 from api.services.manager_service import (
     get_classes,
     get_google_oauth,
@@ -205,35 +207,102 @@ try {{ if(window.opener) window.opener.postMessage({{type:'OAUTH_COMPLETE',statu
     user_info = token_data.get("user_info", {})
     email = user_info.get("email", "")
     display_name = user_info.get("name", email)
+    picture = user_info.get("picture", "")
     youtube_channel = token_data.get("youtube_channel", {})
     channel_id = youtube_channel.get("id", "") if youtube_channel else ""
 
     account_id = f"oauth-{email}" if email else "oauth-default"
     manager.save_account_token(account_id, token_data)
+    if channel_id:
+        manager.save_account_token(channel_id, token_data)
 
     # Update channel manager with connected account
     channel_manager = get_channel_manager()
     acc = channel_manager.get_account(account_id)
     if not acc and email:
-        channel_manager.add_account(
+        for a in channel_manager.get_all_accounts():
+            if a.email == email:
+                acc = a
+                break
+
+    if acc:
+        acc.display_name = display_name
+        if picture:
+            acc.google_profile_image = picture
+        acc.access_token = token_data.get("access_token")
+        acc.refresh_token = token_data.get("refresh_token") or acc.refresh_token
+        acc.last_login = datetime.now().isoformat()
+        channel_manager._save_accounts()
+    else:
+        acc = channel_manager.add_account(
+            account_id=account_id,
             email=email,
             display_name=display_name,
             account_type='personal',
+            google_profile_image=picture,
             access_token=token_data.get("access_token"),
             refresh_token=token_data.get("refresh_token")
         )
 
-    channel_name = youtube_channel.get("snippet", {}).get("title", display_name) if youtube_channel else display_name
-    existing = channel_manager.get_channel(channel_id) if channel_id else None
-    if not existing and channel_id:
-        channel_manager.add_channel(
-            account_id=account_id,
-            channel_id=channel_id,
-            name=channel_name,
-            handle=youtube_channel.get("snippet", {}).get("customUrl", ""),
-            description=youtube_channel.get("snippet", {}).get("description", ""),
-            is_managed=True
-        )
+    # Update or add channel in channel manager
+    snippet = youtube_channel.get("snippet", {}) if youtube_channel else {}
+    stats = youtube_channel.get("statistics", {}) if youtube_channel else {}
+    channel_name = snippet.get("title", display_name) if youtube_channel else display_name
+    handle = snippet.get("customUrl", "")
+    description = snippet.get("description", "")
+    try:
+        subs = int(stats.get("subscriberCount", 0))
+    except (ValueError, TypeError):
+        subs = 0
+    try:
+        vids = int(stats.get("videoCount", 0))
+    except (ValueError, TypeError):
+        vids = 0
+    try:
+        views = int(stats.get("viewCount", 0))
+    except (ValueError, TypeError):
+        views = 0
+
+    if channel_id:
+        existing = channel_manager.get_channel(channel_id)
+        if existing:
+            existing.account_id = account_id
+            existing.name = channel_name
+            existing.handle = handle
+            existing.description = description
+            existing.subscriber_count = subs
+            existing.video_count = vids
+            existing.view_count = views
+            existing.custom_url = handle
+            channel_manager._save_channels()
+        else:
+            channel_manager.add_channel(
+                account_id=account_id,
+                channel_id=channel_id,
+                name=channel_name,
+                handle=handle,
+                description=description,
+                is_managed=True,
+                subscriber_count=subs,
+                video_count=vids,
+                view_count=views,
+                custom_url=handle
+            )
+
+    # Persist to Supabase if connected
+    try:
+        from api.services.manager_service import get_supabase
+        sm = get_supabase()
+        if sm.is_connected():
+            sm.add_account(
+                email=email,
+                display_name=display_name,
+                account_type='personal',
+                google_access_token=token_data.get("access_token"),
+                google_refresh_token=token_data.get("refresh_token")
+            )
+    except Exception as e:
+        logger.warning(f"Could not persist connected account to Supabase: {e}")
 
     if wants_html:
         return f"""<!DOCTYPE html>
