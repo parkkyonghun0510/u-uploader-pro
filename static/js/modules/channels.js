@@ -210,9 +210,6 @@ export async function connectGoogle() {
                 if (completed) return;
                 completed = true;
                 cleanup();
-                try {
-                    if (popup) popup.close();
-                } catch (e) {}
 
                 if (result && result.status === 'success') {
                     showToast(result.message || 'YouTube account connected! Syncing YouTube Studio...', 'success');
@@ -241,7 +238,7 @@ export async function connectGoogle() {
                 };
             } catch (e) {}
 
-            // 2. Storage event listener (fallback across tabs/windows)
+            // 2. Storage event listener (fallback across tabs/windows, immune to COOP)
             const onStorage = (event) => {
                 if (event.key === 'youtube_oauth_status' && event.newValue) {
                     try {
@@ -261,39 +258,12 @@ export async function connectGoogle() {
             };
             window.addEventListener('message', onMessage);
 
-            // 4. Safe polling fallback with COOP exception handling
-            const checkTimer = setInterval(() => {
-                if (completed) {
-                    clearInterval(checkTimer);
-                    return;
-                }
-                try {
-                    let isClosed = false;
-                    try {
-                        isClosed = !!(popup && popup.closed);
-                    } catch (coopErr) {
-                        // Suppress COOP access restriction
-                    }
-                    if (isClosed) {
-                        clearInterval(checkTimer);
-                        setTimeout(() => {
-                            if (!completed) {
-                                handleCompletion({ status: 'success', message: 'Updating connected channels...' });
-                            }
-                        }, 500);
-                    }
-                } catch (e) {
-                    // Suppress Cross-Origin-Opener-Policy browser warning
-                }
-            }, 1000);
-
             // Auto-cleanup after 5 minutes
             const cleanupTimer = setTimeout(() => {
                 cleanup();
             }, 300000);
 
             const cleanup = () => {
-                clearInterval(checkTimer);
                 clearTimeout(cleanupTimer);
                 window.removeEventListener('storage', onStorage);
                 window.removeEventListener('message', onMessage);

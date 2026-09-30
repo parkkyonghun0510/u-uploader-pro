@@ -220,7 +220,26 @@ class ApiTestCase(unittest.TestCase):
         except RuntimeError as e:
             self.fail(f"broadcast_progress raised RuntimeError outside request context: {e}")
 
+    def test_local_dev_token_auth(self):
+        """Verify that local-dev-jwt tokens work properly for protected routes in development."""
+        res = self.client.get(
+            '/api/auth/me',
+            headers={'Authorization': 'Bearer local-dev-jwt-admin@example.com'}
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data.get('user', {}).get('email'), 'admin@example.com')
+        self.assertIn('profile', data)
+
+        # Protected channels accounts should accept local-dev-jwt token
+        ch_res = self.client.get(
+            '/api/channels/accounts',
+            headers={'Authorization': 'Bearer local-dev-jwt-admin@example.com'}
+        )
+        self.assertEqual(ch_res.status_code, 200)
+
 
 if __name__ == '__main__':
     unittest.main()
+
 

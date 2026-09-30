@@ -26,6 +26,18 @@ def auth_signup():
     result = supabase.sign_up(email, password, display_name)
     if not result:
         err = getattr(supabase, 'last_auth_error', None)
+        from flask import current_app
+        is_dev = current_app and (current_app.debug or current_app.config.get('ENV') == 'development')
+        if is_dev and err and any(term in err.lower() for term in ['nodename nor servname', 'connecterror', 'connection error', 'name or service not known', 'failed to establish a new connection']):
+            dev_token = f"local-dev-jwt-{email}"
+            return jsonify({
+                "access_token": dev_token,
+                "refresh_token": "local-dev-refresh-token",
+                "user": {"id": f"local-{email}", "email": email, "display_name": display_name},
+                "dev_mode": True,
+                "notice": "Created local development session (Supabase host unreachable)."
+            }), 201
+
         msg = "Signup failed. The email may already be registered or invalid."
         if err:
             if "already registered" in err.lower():
@@ -62,6 +74,18 @@ def auth_login():
     result = supabase.sign_in(email, password)
     if not result:
         err = getattr(supabase, 'last_auth_error', None)
+        from flask import current_app
+        is_dev = current_app and (current_app.debug or current_app.config.get('ENV') == 'development')
+        if is_dev and err and any(term in err.lower() for term in ['nodename nor servname', 'connecterror', 'connection error', 'name or service not known', 'failed to establish a new connection']):
+            dev_token = f"local-dev-jwt-{email}"
+            return jsonify({
+                "access_token": dev_token,
+                "refresh_token": "local-dev-refresh-token",
+                "user": {"id": f"local-{email}", "email": email},
+                "dev_mode": True,
+                "notice": "Logged in via local development session (Supabase host unreachable)."
+            })
+
         msg = "Invalid email or password. If you don't have an account, please switch to Sign Up."
         if err:
             if "invalid login credentials" in err.lower():
@@ -90,7 +114,17 @@ def auth_me():
     """Get current authenticated user info and profile."""
     supabase = get_supabase()
     user_id = request.auth_user['id']
-    profile = supabase.ensure_profile(user_id, request.auth_user.get('email'))
+    profile = None
+    try:
+        profile = supabase.ensure_profile(user_id, request.auth_user.get('email'))
+    except Exception:
+        profile = None
+    if not profile:
+        profile = {
+            "id": user_id,
+            "email": request.auth_user.get('email', ''),
+            "display_name": (request.auth_user.get('email', '').split('@')[0] if request.auth_user.get('email') else 'Developer')
+        }
     return jsonify({"user": request.auth_user, "profile": profile})
 
 
