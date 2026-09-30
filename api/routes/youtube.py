@@ -208,6 +208,15 @@ def youtube_get_studio(channel_id: str):
         else:
             return jsonify(studio_data), 404
 
+    from api.routes.channels import _build_studio_links
+    cm = get_channel_manager()
+    ch = cm.get_channel(channel_id)
+    aid = request.args.get('account_id') or (ch.account_id if ch else None)
+    acc = cm.get_account(aid) if aid else None
+    acc_email = acc.email if acc else ""
+
+    studio_data["studio_links"] = _build_studio_links(channel_id, acc_email)
+    studio_data["account_email"] = acc_email
     return jsonify(studio_data)
 
 

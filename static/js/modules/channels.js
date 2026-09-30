@@ -512,6 +512,9 @@ export function renderAccounts(accounts = []) {
         const safeId = (acc.id || acc.account_id || acc.channel_id || '').replace(/'/g, "\\'");
         const channelId = acc.channel_id || (acc.youtube_channel && acc.youtube_channel.id) || (Array.isArray(acc.channels) && acc.channels[0]) || '';
         const profileImg = acc.google_profile_image || (acc.youtube_channel?.snippet?.thumbnails?.default?.url) || acc.thumbnail_url || '';
+        const isRealChannel = channelId && String(channelId).startsWith('UC');
+        const authParam = acc.email ? `?authuser=${encodeURIComponent(acc.email)}` : '';
+        const studioHref = isRealChannel ? `https://studio.youtube.com/channel/${channelId}${authParam}` : `https://studio.youtube.com/${authParam}`;
 
         return `
             <div class="account-card">
@@ -550,11 +553,9 @@ export function renderAccounts(accounts = []) {
                     <button type="button" class="btn btn-secondary btn-sm" onclick="viewChannelStats('${channelId || safeId}', '${safeName}')">
                         <i class="fas fa-chart-line"></i> Intelligence
                     </button>
-                    ${channelId ? `
-                        <a href="https://studio.youtube.com/channel/${channelId}" target="_blank" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px; text-decoration:none;" title="Open YouTube Studio">
-                            <i class="fab fa-youtube text-danger"></i> Studio <i class="fas fa-external-link-alt" style="font-size:10px;"></i>
-                        </a>
-                    ` : ''}
+                    <a href="${studioHref}" target="_blank" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px; text-decoration:none;" title="Open YouTube Studio">
+                        <i class="fab fa-youtube text-danger"></i> Studio <i class="fas fa-external-link-alt" style="font-size:10px;"></i>
+                    </a>
                 </div>
             </div>
         `;
@@ -592,11 +593,17 @@ export async function viewChannelStats(channelId, channelName) {
         const ch = data?.channel || {};
         const kpis = data?.kpis || {};
         const recentVideos = Array.isArray(data?.recent_videos) ? data.recent_videos : [];
+        const isRealCid = (ch.id || channelId || '').startsWith('UC');
+        const accEmail = ch.email || data?.account_email || '';
+        const authParam = accEmail ? `?authuser=${encodeURIComponent(accEmail)}` : '';
+        const baseStudio = isRealCid ? `https://studio.youtube.com/channel/${ch.id || channelId}` : 'https://studio.youtube.com';
         const links = data?.studio_links || {
-            dashboard: `https://studio.youtube.com/channel/${ch.id || channelId}`,
-            videos: `https://studio.youtube.com/channel/${ch.id || channelId}/videos/upload`,
-            analytics: `https://studio.youtube.com/channel/${ch.id || channelId}/analytics/tab-overview`,
-            customization: `https://studio.youtube.com/channel/${ch.id || channelId}/editing/sections`
+            dashboard: `${baseStudio}${authParam}`,
+            videos: `${baseStudio}/videos/upload${authParam}`,
+            analytics: `${baseStudio}/analytics/tab-overview${authParam}`,
+            customization: `${baseStudio}/editing/sections${authParam}`,
+            channel_switcher: `https://www.youtube.com/channel_switcher`,
+            account_chooser: `https://accounts.google.com/AccountChooser?service=youtube&continue=${encodeURIComponent(baseStudio)}`
         };
 
         const title = ch.title || channelName || 'YouTube Channel';
@@ -648,6 +655,25 @@ export async function viewChannelStats(channelId, channelName) {
                                 <i class="fab fa-youtube text-danger"></i> Studio Dashboard <i class="fas fa-external-link-alt" style="font-size:10px;"></i>
                             </a>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Account / Permission Guidance Banner -->
+                <div style="background:rgba(59,130,246,0.08); border:1px solid rgba(59,130,246,0.22); border-radius:10px; padding:12px 16px; font-size:12px; line-height:1.45; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <div style="display:flex; align-items:flex-start; gap:10px; color:#cbd5e1; max-width:540px;">
+                        <i class="fas fa-shield-alt text-primary" style="margin-top:2px; font-size:15px; flex-shrink:0;"></i>
+                        <div>
+                            <strong style="color:#60a5fa;">Seeing "Oops, you don't have permission"?</strong><br>
+                            Your browser opened YouTube under a different Google account or Brand profile. Switch your YouTube channel or choose the matching Google account below.
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                        <a href="${links.channel_switcher || 'https://www.youtube.com/channel_switcher'}" target="_blank" class="btn btn-secondary btn-sm" style="font-size:11px; padding:4px 10px; text-decoration:none; display:inline-flex; align-items:center; gap:5px;" title="Switch YouTube Channel / Brand Account">
+                            <i class="fas fa-random text-warning"></i> Switch Channel
+                        </a>
+                        <a href="${links.account_chooser || `https://accounts.google.com/AccountChooser?service=youtube&continue=${encodeURIComponent(links.dashboard)}`}" target="_blank" class="btn btn-secondary btn-sm" style="font-size:11px; padding:4px 10px; text-decoration:none; display:inline-flex; align-items:center; gap:5px;" title="Choose Google Account">
+                            <i class="fas fa-user-circle text-info"></i> Switch Account
+                        </a>
                     </div>
                 </div>
 
@@ -895,6 +921,9 @@ export function renderChannels(channels = []) {
         const vids = ch.video_count || 0;
         const views = ch.view_count || 0;
         const thumb = ch.thumbnail_url || '';
+        const isRealCid = ch.channel_id && String(ch.channel_id).startsWith('UC');
+        const authParam = ch.account_email ? `?authuser=${encodeURIComponent(ch.account_email)}` : '';
+        const chStudioHref = isRealCid ? `https://studio.youtube.com/channel/${ch.channel_id}${authParam}` : `https://studio.youtube.com/${authParam}`;
 
         return `
             <div class="channel-card">
@@ -939,7 +968,7 @@ export function renderChannels(channels = []) {
                     <button type="button" class="btn btn-secondary btn-sm" onclick="openEditChannelModal('${safeId}')" title="Edit Channel Details">
                         <i class="fas fa-edit"></i> Edit
                     </button>
-                    <a href="https://studio.youtube.com/channel/${ch.channel_id || safeId}" target="_blank" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:5px; text-decoration:none;" title="Open in YouTube Studio">
+                    <a href="${chStudioHref}" target="_blank" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:5px; text-decoration:none;" title="Open in YouTube Studio">
                         <i class="fab fa-youtube text-danger"></i> Studio <i class="fas fa-external-link-alt" style="font-size:10px;"></i>
                     </a>
                 </div>

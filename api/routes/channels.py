@@ -1,4 +1,4 @@
-"""Channels, channel accounts, metadata templates, and batch upload routes."""
+import urllib.parse
 from datetime import datetime
 from flask import Blueprint, request, jsonify
 from api.auth import require_auth
@@ -6,6 +6,21 @@ from api.services.manager_service import get_channel_manager, get_oauth_manager,
 from api.services.bulk_service import create_bulk_batch, get_bulk_status, get_all_bulk_batches
 
 channels_bp = Blueprint('channels', __name__)
+
+
+def _build_studio_links(channel_id: str, email: str = "") -> dict:
+    """Build YouTube Studio URLs with multi-account authuser support."""
+    is_valid_cid = bool(channel_id and channel_id.startswith("UC"))
+    auth_param = f"?authuser={urllib.parse.quote(email)}" if email else ""
+    base_url = f"https://studio.youtube.com/channel/{channel_id}" if is_valid_cid else "https://studio.youtube.com"
+    return {
+        "dashboard": f"{base_url}{auth_param}",
+        "videos": f"{base_url}/videos/upload{auth_param}" if is_valid_cid else f"https://studio.youtube.com/videos/upload{auth_param}",
+        "analytics": f"{base_url}/analytics/tab-overview{auth_param}" if is_valid_cid else f"https://studio.youtube.com/analytics{auth_param}",
+        "customization": f"{base_url}/editing/sections{auth_param}" if is_valid_cid else f"https://studio.youtube.com/editing{auth_param}",
+        "channel_switcher": "https://www.youtube.com/channel_switcher",
+        "account_chooser": f"https://accounts.google.com/AccountChooser?service=youtube&continue={urllib.parse.quote(base_url)}"
+    }
 
 
 # ============ CHANNEL ACCOUNTS ============
@@ -503,14 +518,19 @@ def get_channel_studio_hub(channel_id: str):
                 "studio_content_url": f"https://studio.youtube.com/channel/{ch.channel_id}/videos/upload"
             },
             "recent_videos": [],
-            "analytics_summary": {
-                "subscribers": ch.subscriber_count,
-                "total_views": ch.view_count,
-                "total_videos": ch.video_count
-            },
             "cached": True,
             "synced_at": ch.last_sync or ch.created_at
         }
+
+    acc = cm.get_account(aid) if aid else None
+    acc_email = acc.email if acc else ""
+    if not acc_email and ch and getattr(ch, 'account_id', None):
+        acc = cm.get_account(ch.account_id)
+        if acc:
+            acc_email = acc.email
+
+    studio_data["studio_links"] = _build_studio_links(channel_id, acc_email)
+    studio_data["account_email"] = acc_email
     return jsonify(studio_data)
 
 
