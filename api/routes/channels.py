@@ -149,11 +149,25 @@ def sync_account_studio(account_id: str):
         obj = _sync_channel_from_youtube_data(ch, account_id, cm)
         if obj:
             synced.append(obj.to_dict())
+
+    # Fallback to existing channels in ChannelManager or Supabase if none returned by API
+    if not synced:
+        acc_channels = cm.get_channels_by_account(account_id)
+        for c in acc_channels:
+            synced.append(c.to_dict())
+
+    sm = get_supabase()
+    if not synced and sm.is_connected():
+        supa_chs = sm.get_channels(account_id=account_id)
+        for sc in supa_chs:
+            synced.append(sc)
+
     return jsonify({
+        "status": "success",
         "success": True,
         "message": f"Synchronized {len(synced)} channel(s) from YouTube Studio",
         "channels": synced
-    })
+    }), 200
 
 
 @channels_bp.route('/api/channels/accounts', methods=['POST'])
@@ -411,9 +425,23 @@ def get_channel_detail(channel_id: str):
 @channels_bp.route('/api/channels/<channel_id>/sync', methods=['POST'])
 @require_auth
 def sync_single_channel(channel_id: str):
-    """Sync YouTube Studio data for a single channel."""
+    """Sync YouTube Studio data for a single channel or account."""
     from api.routes.youtube import _get_active_youtube_api, _sync_channel_from_youtube_data
     cm = get_channel_manager()
+    oauth_mgr = get_oauth_manager()
+    sm = get_supabase()
+
+    # Delegate to account sync if channel_id is formatted as an account ID or email
+    is_account = (
+        channel_id.startswith("oauth-")
+        or "@" in channel_id
+        or cm.get_account(channel_id) is not None
+        or oauth_mgr.get_account_token(channel_id) is not None
+        or (sm.is_connected() and sm.get_account(channel_id) is not None)
+    )
+    if is_account:
+        return sync_account_studio(channel_id)
+
     ch = cm.get_channel(channel_id)
     aid = ch.account_id if ch else None
     api = _get_active_youtube_api(account_id=aid, channel_id=channel_id)
@@ -427,9 +455,15 @@ def sync_single_channel(channel_id: str):
     if details:
         updated_ch = _sync_channel_from_youtube_data(details, aid or f"oauth-{channel_id}", cm)
         if updated_ch:
-            return jsonify({"success": True, "channel": updated_ch.to_dict()}), 200
+            return jsonify({"status": "success", "success": True, "channel": updated_ch.to_dict()}), 200
     if ch:
-        return jsonify({"success": True, "channel": ch.to_dict(), "cached": True}), 200
+        return jsonify({"status": "success", "success": True, "channel": ch.to_dict(), "cached": True}), 200
+
+    if sm.is_connected():
+        supa_ch = sm.get_channel(channel_id)
+        if supa_ch:
+            return jsonify({"status": "success", "success": True, "channel": supa_ch, "cached": True}), 200
+
     return jsonify({"error": "Failed to sync channel from YouTube Studio"}), 400
 
 
@@ -441,6 +475,14 @@ def get_channel_studio_hub(channel_id: str):
     cm = get_channel_manager()
     ch = cm.get_channel(channel_id)
     aid = ch.account_id if ch else None
+    if not ch:
+        if channel_id.startswith("oauth-") or "@" in channel_id or cm.get_account(channel_id):
+            acc_channels = cm.get_channels_by_account(channel_id)
+            if acc_channels:
+                ch = acc_channels[0]
+                channel_id = ch.channel_id
+                aid = ch.account_id
+
     api = _get_active_youtube_api(account_id=aid, channel_id=channel_id)
     studio_data = api.get_studio_dashboard(channel_id)
     if "error" in studio_data and ch:

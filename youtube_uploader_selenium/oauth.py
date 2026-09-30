@@ -338,11 +338,45 @@ class OAuthManager:
 
     def get_account_token(self, account_id: str) -> Optional[dict]:
         """Get stored tokens for an account."""
-        return self._tokens.get(account_id)
+        tok = self._tokens.get(account_id)
+        if tok:
+            return tok
+
+        # Fallback to Supabase if available
+        try:
+            from youtube_uploader_selenium.supabase_manager import SupabaseManager
+            sm = SupabaseManager()
+            if sm.is_connected():
+                supa_acc = sm.get_account(account_id)
+                if not supa_acc and account_id and account_id.startswith("oauth-"):
+                    email = account_id.replace("oauth-", "")
+                    for a in sm.get_accounts():
+                        if a.get('email') == email:
+                            supa_acc = a
+                            break
+                if supa_acc and supa_acc.get('google_access_token'):
+                    token_entry = {
+                        "access_token": supa_acc.get('google_access_token'),
+                        "refresh_token": supa_acc.get('google_refresh_token'),
+                        "expires_at": None,
+                        "user_info": {
+                            "email": supa_acc.get('email'),
+                            "name": supa_acc.get('display_name'),
+                            "picture": supa_acc.get('google_profile_image')
+                        },
+                        "youtube_channel": None,
+                        "connected_at": supa_acc.get('created_at')
+                    }
+                    self._tokens[account_id] = token_entry
+                    return token_entry
+        except Exception:
+            pass
+
+        return None
 
     def is_token_valid(self, account_id: str) -> bool:
         """Check if stored token is still valid."""
-        token = self._tokens.get(account_id)
+        token = self.get_account_token(account_id)
         if not token:
             return False
         expires_at = token.get("expires_at")
@@ -375,7 +409,7 @@ class OAuthManager:
         if not target_id:
             return None
 
-        token_entry = self._tokens.get(target_id)
+        token_entry = self.get_account_token(target_id)
         if not token_entry:
             return None
 
@@ -400,6 +434,13 @@ class OAuthManager:
                     token_entry["access_token"] = new_token
                     token_entry["expires_at"] = new_exp
                     self._save_tokens()
+                    try:
+                        from youtube_uploader_selenium.supabase_manager import SupabaseManager
+                        sm = SupabaseManager()
+                        if sm.is_connected():
+                            sm.update_account(target_id, google_access_token=new_token)
+                    except Exception:
+                        pass
                     return new_token
 
         return token_entry.get("access_token")

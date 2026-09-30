@@ -133,6 +133,52 @@ class OAuthDatabasePersistenceTestCase(unittest.TestCase):
             self.assertEqual(connected_acc.get("access_token"), "ya29.valid")
             self.assertEqual(connected_acc.get("channels"), ["UC_connected"])
 
+    def test_sync_channel_with_account_id_delegates_and_returns_200(self):
+        app = create_app('testing')
+        client = app.test_client()
+
+        fake_auth = lambda f: f
+        mock_sm = MagicMock()
+        mock_sm.is_connected.return_value = False
+
+        mock_api = MagicMock()
+        mock_api.get_my_channels.return_value = []
+
+        with patch('api.routes.channels.require_auth', fake_auth), \
+             patch('api.routes.channels.get_supabase', return_value=mock_sm), \
+             patch('api.routes.youtube._get_active_youtube_api', return_value=mock_api):
+            # Request sync using an account ID (e.g., oauth-chensopheaktirano@gmail.com)
+            res = client.post('/api/channels/oauth-chensopheaktirano%40gmail.com/sync')
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertTrue(data.get("success"))
+            self.assertEqual(data.get("status"), "success")
+
+    def test_oauth_manager_supabase_token_fallback(self):
+        from youtube_uploader_selenium.oauth import OAuthManager
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mgr = OAuthManager(config_dir=tmp_dir)
+            mock_sm = MagicMock()
+            mock_sm.is_connected.return_value = True
+            mock_sm.get_account.return_value = {
+                "id": "oauth-user@gmail.com",
+                "email": "user@gmail.com",
+                "display_name": "Supabase User",
+                "google_access_token": "supa_tok_123",
+                "google_refresh_token": "supa_ref_123",
+                "google_profile_image": "https://avatar.url",
+                "created_at": "2026-09-30T10:00:00"
+            }
+
+            with patch('youtube_uploader_selenium.supabase_manager.SupabaseManager', return_value=mock_sm):
+                tok = mgr.get_account_token("oauth-user@gmail.com")
+                self.assertIsNotNone(tok)
+                self.assertEqual(tok["access_token"], "supa_tok_123")
+                valid_tok = mgr.get_valid_access_token(account_id="oauth-user@gmail.com")
+                self.assertEqual(valid_tok, "supa_tok_123")
+
 
 if __name__ == '__main__':
     unittest.main()

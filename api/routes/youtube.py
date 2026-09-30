@@ -130,6 +130,15 @@ def _sync_channel_from_youtube_data(ch_dict: dict, account_id: str, channel_mana
             acc.google_profile_image = avatar
         channel_manager._save_accounts()
 
+    # Also persist to Supabase if connected
+    try:
+        from youtube_uploader_selenium.supabase_manager import SupabaseManager
+        sm = SupabaseManager()
+        if sm.is_connected():
+            sm.upsert_channel(account_id, ch_dict)
+    except Exception as e:
+        logger.warning(f"Failed to upsert synced channel to Supabase: {e}")
+
     return channel_obj
 
 
@@ -235,6 +244,7 @@ def youtube_sync_studio():
                 synced_channels.append(saved_ch.to_dict())
 
     return jsonify({
+        "status": "success",
         "success": True,
         "message": f"Successfully synchronized {len(synced_channels)} channel(s) from YouTube Studio",
         "synced_channels": synced_channels,

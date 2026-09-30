@@ -211,7 +211,7 @@ export async function connectGoogle() {
                 completed = true;
                 cleanup();
                 try {
-                    if (popup && !popup.closed) popup.close();
+                    if (popup) popup.close();
                 } catch (e) {}
 
                 if (result && result.status === 'success') {
@@ -268,7 +268,13 @@ export async function connectGoogle() {
                     return;
                 }
                 try {
-                    if (popup && popup.closed) {
+                    let isClosed = false;
+                    try {
+                        isClosed = !!(popup && popup.closed);
+                    } catch (coopErr) {
+                        // Suppress COOP access restriction
+                    }
+                    if (isClosed) {
                         clearInterval(checkTimer);
                         setTimeout(() => {
                             if (!completed) {
@@ -395,7 +401,7 @@ export async function syncStudioData(accountId = null, channelId = null) {
         if (channelId) payload.channel_id = channelId;
 
         const res = await api.post('/api/youtube/sync-studio', payload);
-        if (res.status === 'success') {
+        if (res.status === 'success' || res.success) {
             showToast(res.message || 'YouTube Studio sync complete!', 'success');
         } else {
             showToast(res.error || 'Studio sync finished with warnings', 'warning');
@@ -416,12 +422,17 @@ export async function syncChannelStudio(channelId) {
     if (!channelId) return;
     showToast(`Syncing YouTube Studio for ${channelId}...`, 'info');
     try {
-        const res = await api.post(`/api/channels/${encodeURIComponent(channelId)}/sync`);
-        if (res.status === 'success') {
-            showToast(res.message || 'Channel synced successfully!', 'success');
+        const isAccount = channelId.startsWith('oauth-') || channelId.includes('@');
+        const endpoint = isAccount
+            ? `/api/channels/accounts/${encodeURIComponent(channelId)}/sync`
+            : `/api/channels/${encodeURIComponent(channelId)}/sync`;
+        const res = await api.post(endpoint);
+        if (res.status === 'success' || res.success) {
+            showToast(res.message || 'Sync completed successfully!', 'success');
+            await loadAccounts();
             await loadChannels();
         } else {
-            showToast(res.error || 'Channel sync completed with warnings', 'warning');
+            showToast(res.error || 'Sync completed with warnings', 'warning');
         }
     } catch (err) {
         showToast('Sync failed: ' + err.message, 'error');
