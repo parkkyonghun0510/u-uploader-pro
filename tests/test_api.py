@@ -207,6 +207,19 @@ class ApiTestCase(unittest.TestCase):
             del_res = self.client.delete(f'/api/batches/{batch_id}', headers={'Authorization': 'Bearer test-token'})
             self.assertEqual(del_res.status_code, 200)
 
+    def test_broadcast_progress_outside_request_context(self):
+        """Verify that broadcast_progress can be invoked in a background thread without request context."""
+        from api.services.uploader_service import broadcast_progress
+        from youtube_uploader_selenium.models import UploadJob
+        queue = get_upload_queue()
+        job = UploadJob(video_path="/tmp/fake_video.mp4")
+        queue.add_job(job)
+        # Must execute cleanly without raising RuntimeError: Working outside of request context
+        try:
+            broadcast_progress(job.job_id)
+        except RuntimeError as e:
+            self.fail(f"broadcast_progress raised RuntimeError outside request context: {e}")
+
 
 if __name__ == '__main__':
     unittest.main()

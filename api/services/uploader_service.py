@@ -9,6 +9,7 @@ from api.extensions import socketio, logger
 from .manager_service import (
     get_classes,
     get_upload_queue,
+    get_supabase,
     get_supabase_client,
     get_oauth_manager,
     get_google_oauth,
@@ -31,26 +32,32 @@ def broadcast_progress(job_id: str):
     queue = get_upload_queue()
     job = queue.get_job(job_id)
     if job:
-        socketio.emit('upload_progress', job.to_dict(), broadcast=True, include_self=False)
-        client = get_supabase_client()
-        if client:
-            threading.Thread(target=_sync_job_to_supabase, args=[job], daemon=True).start()
+        try:
+            socketio.emit('upload_progress', job.to_dict())
+        except Exception as e:
+            logger.debug(f"SocketIO broadcast notice: {e}")
+        try:
+            client = get_supabase_client()
+            if client:
+                threading.Thread(target=_sync_job_to_supabase, args=[job], daemon=True).start()
+        except Exception as e:
+            logger.debug(f"Supabase sync dispatch error: {e}")
 
 
 def _sync_job_to_supabase(job):
     """Sync upload job to Supabase in background."""
     try:
-        client = get_supabase_client()
-        if client:
-            client.update_upload_job(str(job.job_id), {
+        sm = get_supabase()
+        if sm.is_connected() and sm.client:
+            sm.client.table('upload_jobs').update({
                 'status': job.status.value,
                 'progress': job.progress,
                 'video_id': getattr(job, 'video_id', None),
                 'error_message': getattr(job, 'error_message', None),
                 'completed_at': job.completed_at,
-            })
+            }).eq('id', str(job.job_id)).execute()
     except Exception as e:
-        logger.error(f"Supabase sync error: {e}")
+        logger.debug(f"Supabase sync notice: {e}")
 
 
 def save_job_history(job):
@@ -72,17 +79,20 @@ def save_job_history(job):
     except Exception as e:
         logger.error(f"Error saving job history locally: {e}")
 
-    client = get_supabase_client()
-    if client:
-        threading.Thread(target=_sync_history_to_supabase, args=[job], daemon=True).start()
+    try:
+        sm = get_supabase()
+        if sm.is_connected() and sm.client:
+            threading.Thread(target=_sync_history_to_supabase, args=[job], daemon=True).start()
+    except Exception as e:
+        logger.debug(f"Supabase history dispatch notice: {e}")
 
 
 def _sync_history_to_supabase(job):
     """Sync upload history record to Supabase."""
     try:
-        client = get_supabase_client()
-        if client:
-            client.get_table('upload_history').insert({
+        sm = get_supabase()
+        if sm.is_connected() and sm.client:
+            sm.client.table('upload_history').insert({
                 'job_id': str(job.job_id),
                 'channel_id': str(job.channel_id) if job.channel_id else None,
                 'video_id': getattr(job, 'video_id', None),
@@ -92,9 +102,9 @@ def _sync_history_to_supabase(job):
                 'duration_seconds': getattr(job, 'duration_seconds', None),
                 'file_size': getattr(job, 'file_size', None),
                 'error_message': getattr(job, 'error_message', None),
-            })
+            }).execute()
     except Exception as e:
-        logger.error(f"History sync error: {e}")
+        logger.debug(f"History sync notice: {e}")
 
 
 def calculate_schedule_delay(schedule_str: str) -> float:
@@ -279,8 +289,9 @@ def start_upload_thread(job_id: str):
         job.completed_at = datetime.now().isoformat()
         logger.error(f"Upload {job_id} error: {str(e)}")
         if job.retry_count < job.max_retries:
+            job.retry_count += 1
             job.status = UploadStatus.PENDING
-            job.add_log(f"Retry scheduled (attempt {job.retry_count + 1}/{job.max_retries})")
+            job.add_log(f"Retry scheduled (attempt {job.retry_count}/{job.max_retries})")
             threading.Timer(10, start_upload_thread, args=[job_id]).start()
 
     finally:
