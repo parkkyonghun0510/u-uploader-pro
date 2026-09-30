@@ -106,6 +106,9 @@ class YouTubeChannel:
     subscriber_count: int = 0
     video_count: int = 0
     view_count: int = 0
+    thumbnail_url: Optional[str] = None
+    banner_url: Optional[str] = None
+    last_sync: Optional[str] = None
     created_at: str = ""
 
     def to_dict(self) -> dict:
@@ -124,6 +127,9 @@ class YouTubeChannel:
             "subscriber_count": self.subscriber_count,
             "video_count": self.video_count,
             "view_count": self.view_count,
+            "thumbnail_url": self.thumbnail_url,
+            "banner_url": self.banner_url,
+            "last_sync": self.last_sync,
             "created_at": self.created_at
         }
 

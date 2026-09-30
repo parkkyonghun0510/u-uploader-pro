@@ -1,7 +1,8 @@
 """Channels, channel accounts, metadata templates, and batch upload routes."""
+from datetime import datetime
 from flask import Blueprint, request, jsonify
 from api.auth import require_auth
-from api.services.manager_service import get_channel_manager, get_oauth_manager
+from api.services.manager_service import get_channel_manager, get_oauth_manager, get_supabase
 from api.services.bulk_service import create_bulk_batch, get_bulk_status, get_all_bulk_batches
 
 channels_bp = Blueprint('channels', __name__)
@@ -20,6 +21,47 @@ def get_accounts():
     existing_emails = {a.get('email') for a in accounts if a.get('email')}
     existing_ids = {a.get('account_id') for a in accounts if a.get('account_id')}
 
+    # Retrieve stored accounts from database for current user
+    sm = get_supabase()
+    if sm.is_connected():
+        auth_uid = getattr(request, 'auth_user', {}).get('id') if hasattr(request, 'auth_user') and request.auth_user else None
+        supa_accs = sm.get_accounts(auth_uid)
+        for sa in supa_accs:
+            s_id = sa.get('id')
+            s_email = sa.get('email')
+            if s_id not in existing_ids and (not s_email or s_email not in existing_emails):
+                tok = sa.get('google_access_token') or sa.get('access_token')
+                ref = sa.get('google_refresh_token') or sa.get('refresh_token')
+                img = sa.get('google_profile_image') or sa.get('avatar_url')
+                acc_obj = {
+                    "account_id": s_id,
+                    "email": s_email or "",
+                    "display_name": sa.get('display_name', s_email or 'YouTube Account'),
+                    "account_type": sa.get('account_type', 'personal'),
+                    "is_active": sa.get('is_active', True),
+                    "is_verified": sa.get('is_verified', True),
+                    "google_profile_image": img,
+                    "channels": sa.get('channels', []),
+                    "created_at": sa.get('created_at', ''),
+                    "access_token": tok,
+                    "refresh_token": ref
+                }
+                accounts.append(acc_obj)
+                if s_email:
+                    existing_emails.add(s_email)
+                if s_id:
+                    existing_ids.add(s_id)
+                if tok:
+                    oauth_mgr.save_account_token(s_id, {
+                        "access_token": tok,
+                        "refresh_token": ref,
+                        "user_info": {
+                            "email": s_email,
+                            "name": sa.get('display_name', s_email),
+                            "picture": img
+                        }
+                    })
+
     for aid, tdata in oauth_mgr._tokens.items():
         uinfo = tdata.get('user_info', {})
         email = uinfo.get('email', '')
@@ -35,13 +77,83 @@ def get_accounts():
                 "google_profile_image": uinfo.get('picture', None),
                 "channels": [yt_ch.get('id')] if yt_ch.get('id') else [],
                 "created_at": tdata.get('connected_at', ''),
-                "access_token": tdata.get('access_token')
+                "access_token": tdata.get('access_token'),
+                "refresh_token": tdata.get('refresh_token')
             })
             if email:
                 existing_emails.add(email)
             existing_ids.add(aid)
 
     return jsonify(accounts)
+
+
+@channels_bp.route('/api/channels/accounts/<account_id>', methods=['GET'])
+@require_auth
+def get_account_detail(account_id: str):
+    """Retrieve details for a single YouTube account."""
+    cm = get_channel_manager()
+    acc = cm.get_account(account_id)
+    if acc:
+        return jsonify(acc.to_dict()), 200
+
+    oauth_mgr = get_oauth_manager()
+    tdata = oauth_mgr.get_account_token(account_id)
+    if tdata:
+        uinfo = tdata.get('user_info', {})
+        yt_ch = tdata.get('youtube_channel') or {}
+        return jsonify({
+            "account_id": account_id,
+            "email": uinfo.get('email', ''),
+            "display_name": uinfo.get('name', ''),
+            "account_type": "personal",
+            "is_active": True,
+            "is_verified": True,
+            "google_profile_image": uinfo.get('picture', None),
+            "channels": [yt_ch.get('id')] if yt_ch.get('id') else [],
+            "created_at": tdata.get('connected_at', ''),
+            "access_token": tdata.get('access_token'),
+            "refresh_token": tdata.get('refresh_token')
+        }), 200
+
+    sm = get_supabase()
+    if sm.is_connected():
+        supa_acc = sm.get_account(account_id)
+        if supa_acc:
+            return jsonify({
+                "account_id": supa_acc.get('id', account_id),
+                "email": supa_acc.get('email', ''),
+                "display_name": supa_acc.get('display_name', ''),
+                "account_type": supa_acc.get('account_type', 'personal'),
+                "is_active": supa_acc.get('is_active', True),
+                "is_verified": supa_acc.get('is_verified', True),
+                "google_profile_image": supa_acc.get('google_profile_image'),
+                "channels": supa_acc.get('channels', []),
+                "created_at": supa_acc.get('created_at', ''),
+                "access_token": supa_acc.get('google_access_token'),
+                "refresh_token": supa_acc.get('google_refresh_token')
+            }), 200
+
+    return jsonify({"error": "Account not found"}), 404
+
+
+@channels_bp.route('/api/channels/accounts/<account_id>/sync', methods=['POST'])
+@require_auth
+def sync_account_studio(account_id: str):
+    """Sync YouTube Studio channels and data for a given account."""
+    from api.routes.youtube import _get_active_youtube_api, _sync_channel_from_youtube_data
+    cm = get_channel_manager()
+    api = _get_active_youtube_api(account_id=account_id)
+    channels = api.get_my_channels()
+    synced = []
+    for ch in channels:
+        obj = _sync_channel_from_youtube_data(ch, account_id, cm)
+        if obj:
+            synced.append(obj.to_dict())
+    return jsonify({
+        "success": True,
+        "message": f"Synchronized {len(synced)} channel(s) from YouTube Studio",
+        "channels": synced
+    })
 
 
 @channels_bp.route('/api/channels/accounts', methods=['POST'])
@@ -182,17 +294,103 @@ def get_channels():
 
     oauth_mgr = get_oauth_manager()
     existing_cids = {c.get('channel_id') for c in ch_list if c.get('channel_id')}
-    for aid, tdata in oauth_mgr._tokens.items():
-        yt_ch = tdata.get('youtube_channel')
-        if yt_ch and isinstance(yt_ch, dict):
-            cid = yt_ch.get('id')
+
+    # Also load from Supabase channels for current user
+    sm = get_supabase()
+    if sm.is_connected():
+        auth_uid = getattr(request, 'auth_user', {}).get('id') if hasattr(request, 'auth_user') and request.auth_user else None
+        supa_channels = sm.get_channels(account_id=account_filter, auth_user_id=auth_uid)
+        for sc in supa_channels:
+            cid = sc.get('channel_id')
             if cid and cid not in existing_cids:
-                if account_filter and account_filter != aid:
-                    continue
-                snippet = yt_ch.get('snippet', {})
-                stats = yt_ch.get('statistics', {})
+                branding = sc.get('branding_settings') or {}
+                avatar = branding.get('avatar', '') if isinstance(branding, dict) else ''
                 ch_list.append({
                     "channel_id": cid,
+                    "account_id": sc.get('account_id', ''),
+                    "name": sc.get('name', 'YouTube Channel'),
+                    "handle": sc.get('handle', ''),
+                    "description": sc.get('description', ''),
+                    "status": sc.get('status', 'active'),
+                    "account_type": "personal",
+                    "is_managed": sc.get('is_managed', True),
+                    "subscriber_count": sc.get('subscriber_count', 0),
+                    "video_count": sc.get('video_count', 0),
+                    "view_count": sc.get('view_count', 0),
+                    "thumbnail_url": sc.get('custom_url') or avatar or '',
+                    "created_at": sc.get('created_at', '')
+                })
+                existing_cids.add(cid)
+
+    for aid, tdata in oauth_mgr._tokens.items():
+        # Check both single youtube_channel and youtube_channels array
+        channels_candidates = tdata.get('youtube_channels') or []
+        single_ch = tdata.get('youtube_channel')
+        if not channels_candidates and single_ch and isinstance(single_ch, dict):
+            channels_candidates = [single_ch]
+
+        for yt_ch in channels_candidates:
+            if yt_ch and isinstance(yt_ch, dict):
+                cid = yt_ch.get('id')
+                if cid and cid not in existing_cids:
+                    if account_filter and account_filter != aid:
+                        continue
+                    snippet = yt_ch.get('snippet', {})
+                    stats = yt_ch.get('statistics', {})
+                    thumbs = snippet.get('thumbnails', {})
+                    avatar = (
+                        thumbs.get('high', {}).get('url') or
+                        thumbs.get('medium', {}).get('url') or
+                        thumbs.get('default', {}).get('url')
+                    )
+                    ch_list.append({
+                        "channel_id": cid,
+                        "account_id": aid,
+                        "name": snippet.get('title', 'YouTube Channel'),
+                        "handle": snippet.get('customUrl', ''),
+                        "description": snippet.get('description', ''),
+                        "status": "active",
+                        "account_type": "personal",
+                        "is_managed": True,
+                        "subscriber_count": int(stats.get('subscriberCount', 0)),
+                        "video_count": int(stats.get('videoCount', 0)),
+                        "view_count": int(stats.get('viewCount', 0)),
+                        "thumbnail_url": avatar,
+                        "created_at": tdata.get('connected_at', '')
+                    })
+                    existing_cids.add(cid)
+
+    return jsonify(ch_list)
+
+
+@channels_bp.route('/api/channels/<channel_id>', methods=['GET'])
+@require_auth
+def get_channel_detail(channel_id: str):
+    """Retrieve details for a single managed channel."""
+    cm = get_channel_manager()
+    ch = cm.get_channel(channel_id)
+    if ch:
+        return jsonify(ch.to_dict()), 200
+
+    oauth_mgr = get_oauth_manager()
+    for aid, tdata in oauth_mgr._tokens.items():
+        candidates = tdata.get('youtube_channels') or []
+        single = tdata.get('youtube_channel')
+        if not candidates and single and isinstance(single, dict):
+            candidates = [single]
+
+        for yt_ch in candidates:
+            if yt_ch and isinstance(yt_ch, dict) and yt_ch.get('id') == channel_id:
+                snippet = yt_ch.get('snippet', {})
+                stats = yt_ch.get('statistics', {})
+                thumbs = snippet.get('thumbnails', {})
+                avatar = (
+                    thumbs.get('high', {}).get('url') or
+                    thumbs.get('medium', {}).get('url') or
+                    thumbs.get('default', {}).get('url')
+                )
+                return jsonify({
+                    "channel_id": channel_id,
                     "account_id": aid,
                     "name": snippet.get('title', 'YouTube Channel'),
                     "handle": snippet.get('customUrl', ''),
@@ -203,11 +401,75 @@ def get_channels():
                     "subscriber_count": int(stats.get('subscriberCount', 0)),
                     "video_count": int(stats.get('videoCount', 0)),
                     "view_count": int(stats.get('viewCount', 0)),
+                    "thumbnail_url": avatar,
                     "created_at": tdata.get('connected_at', '')
-                })
-                existing_cids.add(cid)
+                }), 200
 
-    return jsonify(ch_list)
+    return jsonify({"error": "Channel not found"}), 404
+
+
+@channels_bp.route('/api/channels/<channel_id>/sync', methods=['POST'])
+@require_auth
+def sync_single_channel(channel_id: str):
+    """Sync YouTube Studio data for a single channel."""
+    from api.routes.youtube import _get_active_youtube_api, _sync_channel_from_youtube_data
+    cm = get_channel_manager()
+    ch = cm.get_channel(channel_id)
+    aid = ch.account_id if ch else None
+    api = _get_active_youtube_api(account_id=aid, channel_id=channel_id)
+    details = api.get_channel_details(channel_id)
+    if not details:
+        channels = api.get_my_channels()
+        for c in channels:
+            if c.get("id") == channel_id:
+                details = c
+                break
+    if details:
+        updated_ch = _sync_channel_from_youtube_data(details, aid or f"oauth-{channel_id}", cm)
+        if updated_ch:
+            return jsonify({"success": True, "channel": updated_ch.to_dict()}), 200
+    if ch:
+        return jsonify({"success": True, "channel": ch.to_dict(), "cached": True}), 200
+    return jsonify({"error": "Failed to sync channel from YouTube Studio"}), 400
+
+
+@channels_bp.route('/api/channels/<channel_id>/studio', methods=['GET'])
+@require_auth
+def get_channel_studio_hub(channel_id: str):
+    """Retrieve full YouTube Studio dashboard intelligence for a channel."""
+    from api.routes.youtube import _get_active_youtube_api
+    cm = get_channel_manager()
+    ch = cm.get_channel(channel_id)
+    aid = ch.account_id if ch else None
+    api = _get_active_youtube_api(account_id=aid, channel_id=channel_id)
+    studio_data = api.get_studio_dashboard(channel_id)
+    if "error" in studio_data and ch:
+        studio_data = {
+            "channel": {
+                "id": ch.channel_id,
+                "title": ch.name,
+                "handle": ch.handle,
+                "custom_url": ch.custom_url or ch.handle,
+                "description": ch.description,
+                "subscriber_count": ch.subscriber_count,
+                "video_count": ch.video_count,
+                "view_count": ch.view_count,
+                "avatar_url": ch.thumbnail_url or "",
+                "banner_url": ch.banner_url or "",
+                "studio_url": f"https://studio.youtube.com/channel/{ch.channel_id}",
+                "studio_analytics_url": f"https://studio.youtube.com/channel/{ch.channel_id}/analytics/tab-overview",
+                "studio_content_url": f"https://studio.youtube.com/channel/{ch.channel_id}/videos/upload"
+            },
+            "recent_videos": [],
+            "analytics_summary": {
+                "subscribers": ch.subscriber_count,
+                "total_views": ch.view_count,
+                "total_videos": ch.video_count
+            },
+            "cached": True,
+            "synced_at": ch.last_sync or ch.created_at
+        }
+    return jsonify(studio_data)
 
 
 @channels_bp.route('/api/channels', methods=['POST'])
@@ -270,7 +532,11 @@ def patch_channel(channel_id: str):
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid request body"}), 400
 
-    allowed_fields = {'name', 'handle', 'description', 'is_managed', 'status', 'default_language', 'country', 'custom_url'}
+    allowed_fields = {
+        'name', 'handle', 'description', 'is_managed', 'status',
+        'default_language', 'country', 'custom_url',
+        'thumbnail_url', 'banner_url', 'subscriber_count', 'video_count', 'view_count'
+    }
     disallowed = set(data.keys()) - allowed_fields
     if disallowed:
         return jsonify({"error": f"Disallowed fields in patch: {', '.join(sorted(disallowed))}"}), 400
@@ -350,14 +616,53 @@ def create_template():
     return jsonify(template.to_dict()), 201
 
 
+@channels_bp.route('/api/templates/<template_id>', methods=['GET'])
+@require_auth
+def get_template(template_id: str):
+    """Retrieve a single metadata template by ID."""
+    cm = get_channel_manager()
+    template = cm.get_template(template_id)
+    if template:
+        return jsonify(template.to_dict()), 200
+    return jsonify({"error": "Template not found"}), 404
+
+
+@channels_bp.route('/api/templates/<template_id>', methods=['PATCH'])
+@require_auth
+def patch_template(template_id: str):
+    """Partially update an existing metadata template."""
+    cm = get_channel_manager()
+    template = cm.get_template(template_id)
+    if not template:
+        return jsonify({"error": "Template not found"}), 404
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid request body"}), 400
+
+    allowed_fields = {
+        'name', 'title_template', 'description_template', 'tags',
+        'category', 'language', 'privacy_status', 'made_for_kids',
+        'upload_schedule', 'is_default'
+    }
+    disallowed = set(data.keys()) - allowed_fields
+    if disallowed:
+        return jsonify({"error": f"Disallowed fields in patch: {', '.join(sorted(disallowed))}"}), 400
+
+    updated = cm.update_template(template_id, **data)
+    return jsonify(updated.to_dict()), 200
+
+
 @channels_bp.route('/api/templates/<template_id>', methods=['DELETE'])
 @require_auth
 def delete_template(template_id: str):
     """Delete a metadata template."""
     cm = get_channel_manager()
-    cm._templates.pop(template_id, None)
-    cm._save_templates()
-    return jsonify({"message": "Template deleted"})
+    if template_id in cm._templates:
+        cm._templates.pop(template_id, None)
+        cm._save_templates()
+        return jsonify({"message": "Template deleted"}), 200
+    return jsonify({"error": "Template not found"}), 404
 
 
 # ============ BULK UPLOAD BATCHES ============
@@ -418,6 +723,28 @@ def get_batch(batch_id: str):
     if batch:
         return jsonify(batch.to_dict())
     return jsonify({"error": "Batch not found"}), 404
+
+
+@channels_bp.route('/api/batches/<batch_id>', methods=['PATCH'])
+@require_auth
+def patch_batch(batch_id: str):
+    """Partially update a bulk upload batch."""
+    cm = get_channel_manager()
+    batch = cm.get_batch(batch_id)
+    if not batch:
+        return jsonify({"error": "Batch not found"}), 404
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid request body"}), 400
+
+    allowed_fields = {'name', 'priority', 'status'}
+    disallowed = set(data.keys()) - allowed_fields
+    if disallowed:
+        return jsonify({"error": f"Disallowed fields in patch: {', '.join(sorted(disallowed))}"}), 400
+
+    updated = cm.update_batch(batch_id, **data)
+    return jsonify(updated.to_dict()), 200
 
 
 @channels_bp.route('/api/batches/<batch_id>', methods=['DELETE'])

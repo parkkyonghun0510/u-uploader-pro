@@ -136,7 +136,10 @@ class ChannelManager:
     def add_channel(self, account_id: str, channel_id: str, name: str, handle: str = "",
                     description: str = "", is_managed: bool = False,
                     subscriber_count: int = 0, video_count: int = 0, view_count: int = 0,
-                    custom_url: Optional[str] = None) -> YouTubeChannel:
+                    custom_url: Optional[str] = None,
+                    thumbnail_url: Optional[str] = None,
+                    banner_url: Optional[str] = None,
+                    last_sync: Optional[str] = None) -> YouTubeChannel:
         channel = YouTubeChannel(
             channel_id=channel_id,
             account_id=account_id,
@@ -148,6 +151,9 @@ class ChannelManager:
             video_count=video_count,
             view_count=view_count,
             custom_url=custom_url,
+            thumbnail_url=thumbnail_url,
+            banner_url=banner_url,
+            last_sync=last_sync,
             created_at=datetime.now().isoformat()
         )
         self._channels[channel_id] = channel
@@ -211,6 +217,19 @@ class ChannelManager:
         self._save_templates()
         return template
 
+    def get_template(self, template_id: str) -> Optional[ChannelMetadataTemplate]:
+        return self._templates.get(template_id)
+
+    def update_template(self, template_id: str, **kwargs) -> Optional[ChannelMetadataTemplate]:
+        template = self._templates.get(template_id)
+        if not template:
+            return None
+        for key, value in kwargs.items():
+            if hasattr(template, key):
+                setattr(template, key, value)
+        self._save_templates()
+        return template
+
     def get_templates_by_channel(self, channel_id: str) -> List[ChannelMetadataTemplate]:
         return [t for t in self._templates.values() if t.channel_id == channel_id]
 
@@ -256,6 +275,16 @@ class ChannelManager:
             batch.uploaded_count = uploaded
             batch.failed_count = failed
             self._save_batches()
+
+    def update_batch(self, batch_id: str, **kwargs) -> Optional[BulkUploadBatch]:
+        batch = self._batches.get(batch_id)
+        if not batch:
+            return None
+        for key, value in kwargs.items():
+            if hasattr(batch, key):
+                setattr(batch, key, value)
+        self._save_batches()
+        return batch
 
     def delete_batch(self, batch_id: str) -> bool:
         if batch_id in self._batches:

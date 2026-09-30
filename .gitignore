@@ -95,3 +95,8 @@ node_modules/
 .pytest_cache/
 .claude/
 config/oauth_clients.json
+config/oauth_tokens.json
+config/accounts.json
+config/channels.json
+config/templates.json
+config/batches.json

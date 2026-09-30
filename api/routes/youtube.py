@@ -39,25 +39,104 @@ def youtube_auth():
     return jsonify({"message": "YouTube API connected", "channels": channels})
 
 
-def _get_active_youtube_api(account_id: str = None):
-    """Instantiate YouTubeAPI configured with active OAuth access token."""
+def _get_active_youtube_api(account_id: str = None, channel_id: str = None):
+    """Instantiate YouTubeAPI configured with active OAuth access token, auto-refreshing if expired."""
     _, _, _, _, _, _, _, YouTubeAPI, _, _, _, _, _, _ = get_classes()
     oauth_mgr = get_oauth_manager()
-    access_token = None
-    if account_id:
-        token_entry = oauth_mgr.get_account_token(account_id)
-        if token_entry:
-            access_token = token_entry.get("access_token")
-    elif oauth_mgr._tokens:
-        latest = sorted(oauth_mgr._tokens.values(), key=lambda t: t.get('connected_at', ''), reverse=True)
-        access_token = latest[0].get("access_token")
+    google_oauth = get_google_oauth()
+    access_token = oauth_mgr.get_valid_access_token(
+        account_id=account_id,
+        channel_id=channel_id,
+        google_oauth=google_oauth
+    )
     return YouTubeAPI(access_token=access_token)
+
+
+def _sync_channel_from_youtube_data(ch_dict: dict, account_id: str, channel_manager):
+    """Helper to upsert a YouTube channel and its Studio metadata into ChannelManager."""
+    if not ch_dict or not isinstance(ch_dict, dict):
+        return None
+    cid = ch_dict.get("id")
+    if not cid:
+        return None
+
+    snippet = ch_dict.get("snippet", {})
+    stats = ch_dict.get("statistics", {})
+    branding = ch_dict.get("brandingSettings", {})
+
+    channel_name = snippet.get("title") or "YouTube Channel"
+    handle = snippet.get("customUrl", "")
+    description = snippet.get("description", "")
+    thumbs = snippet.get("thumbnails", {})
+    avatar = (
+        thumbs.get("high", {}).get("url") or
+        thumbs.get("medium", {}).get("url") or
+        thumbs.get("default", {}).get("url") or ""
+    )
+    banner = branding.get("image", {}).get("bannerExternalUrl", "")
+
+    try:
+        subs = int(stats.get("subscriberCount", 0))
+    except (ValueError, TypeError):
+        subs = 0
+    try:
+        vids = int(stats.get("videoCount", 0))
+    except (ValueError, TypeError):
+        vids = 0
+    try:
+        views = int(stats.get("viewCount", 0))
+    except (ValueError, TypeError):
+        views = 0
+
+    existing = channel_manager.get_channel(cid)
+    now_iso = datetime.now().isoformat()
+    if existing:
+        existing.account_id = account_id
+        existing.name = channel_name
+        existing.handle = handle
+        existing.description = description
+        existing.subscriber_count = subs
+        existing.video_count = vids
+        existing.view_count = views
+        existing.custom_url = handle
+        existing.thumbnail_url = avatar
+        existing.banner_url = banner
+        existing.last_sync = now_iso
+        channel_manager._save_channels()
+        channel_obj = existing
+    else:
+        channel_obj = channel_manager.add_channel(
+            account_id=account_id,
+            channel_id=cid,
+            name=channel_name,
+            handle=handle,
+            description=description,
+            is_managed=True,
+            subscriber_count=subs,
+            video_count=vids,
+            view_count=views,
+            custom_url=handle,
+            thumbnail_url=avatar,
+            banner_url=banner,
+            last_sync=now_iso
+        )
+
+    # Link to account if present
+    acc = channel_manager.get_account(account_id)
+    if acc:
+        if cid not in acc.channels:
+            acc.channels.append(cid)
+        if not acc.google_profile_image and avatar:
+            acc.google_profile_image = avatar
+        channel_manager._save_accounts()
+
+    return channel_obj
 
 
 @youtube_bp.route('/api/youtube/channels', methods=['GET'])
 def youtube_get_channels():
     """Fetch current user channels from YouTube API."""
-    api = _get_active_youtube_api(request.args.get('account_id'))
+    api = _get_active_youtube_api(request.args.get('account_id'), channel_id=request.args.get('channel_id'))
     channels = api.get_my_channels()
     return jsonify(channels)
 
@@ -65,7 +144,7 @@ def youtube_get_channels():
 @youtube_bp.route('/api/youtube/channels/<channel_id>', methods=['GET'])
 def youtube_get_channel_details(channel_id: str):
     """Fetch specific channel details from YouTube API."""
-    api = _get_active_youtube_api(request.args.get('account_id'))
+    api = _get_active_youtube_api(request.args.get('account_id'), channel_id=channel_id)
     details = api.get_channel_details(channel_id)
     if details:
         return jsonify(details)
@@ -75,16 +154,98 @@ def youtube_get_channel_details(channel_id: str):
 @youtube_bp.route('/api/youtube/channels/<channel_id>/videos', methods=['GET'])
 def youtube_get_channel_videos(channel_id: str):
     """Fetch videos for a given channel."""
-    api = _get_active_youtube_api(request.args.get('account_id'))
+    api = _get_active_youtube_api(request.args.get('account_id'), channel_id=channel_id)
     max_results = int(request.args.get('max_results', 50))
     videos = api.get_channel_videos(channel_id, max_results)
     return jsonify(videos)
 
 
+@youtube_bp.route('/api/youtube/studio/<channel_id>', methods=['GET'])
+def youtube_get_studio(channel_id: str):
+    """Retrieve full YouTube Studio dashboard data for a channel."""
+    api = _get_active_youtube_api(request.args.get('account_id'), channel_id=channel_id)
+    studio_data = api.get_studio_dashboard(channel_id)
+
+    # Fallback to locally cached data if API call failed
+    if "error" in studio_data:
+        cm = get_channel_manager()
+        ch = cm.get_channel(channel_id)
+        if ch:
+            studio_data = {
+                "channel": {
+                    "id": ch.channel_id,
+                    "title": ch.name,
+                    "handle": ch.handle,
+                    "custom_url": ch.custom_url or ch.handle,
+                    "description": ch.description,
+                    "subscriber_count": ch.subscriber_count,
+                    "video_count": ch.video_count,
+                    "view_count": ch.view_count,
+                    "avatar_url": ch.thumbnail_url or "",
+                    "banner_url": ch.banner_url or "",
+                    "studio_url": f"https://studio.youtube.com/channel/{ch.channel_id}",
+                    "studio_analytics_url": f"https://studio.youtube.com/channel/{ch.channel_id}/analytics/tab-overview",
+                    "studio_content_url": f"https://studio.youtube.com/channel/{ch.channel_id}/videos/upload"
+                },
+                "recent_videos": [],
+                "analytics_summary": {
+                    "subscribers": ch.subscriber_count,
+                    "total_views": ch.view_count,
+                    "total_videos": ch.video_count
+                },
+                "cached": True,
+                "synced_at": ch.last_sync or datetime.now().isoformat()
+            }
+        else:
+            return jsonify(studio_data), 404
+
+    return jsonify(studio_data)
+
+
+@youtube_bp.route('/api/youtube/sync-studio', methods=['POST'])
+def youtube_sync_studio():
+    """Sync YouTube Studio channel data and statistics for all or specified connected accounts."""
+    data = request.get_json(silent=True) or {}
+    target_account = data.get('account_id')
+    target_channel = data.get('channel_id')
+
+    oauth_mgr = get_oauth_manager()
+    channel_manager = get_channel_manager()
+
+    accounts_to_sync = []
+    if target_account:
+        token_entry = oauth_mgr.get_account_token(target_account)
+        if token_entry:
+            accounts_to_sync.append((target_account, token_entry))
+    else:
+        for aid, tdata in oauth_mgr._tokens.items():
+            if aid.startswith("oauth-") or tdata.get("user_info"):
+                accounts_to_sync.append((aid, tdata))
+
+    synced_channels = []
+    for aid, tdata in accounts_to_sync:
+        api = _get_active_youtube_api(account_id=aid, channel_id=target_channel)
+        channels = api.get_my_channels()
+        for ch in channels:
+            cid = ch.get("id")
+            if target_channel and cid != target_channel:
+                continue
+            saved_ch = _sync_channel_from_youtube_data(ch, aid, channel_manager)
+            if saved_ch:
+                synced_channels.append(saved_ch.to_dict())
+
+    return jsonify({
+        "success": True,
+        "message": f"Successfully synchronized {len(synced_channels)} channel(s) from YouTube Studio",
+        "synced_channels": synced_channels,
+        "count": len(synced_channels)
+    })
+
+
 @youtube_bp.route('/api/youtube/search', methods=['GET'])
 def youtube_search():
     """Search videos or channels via YouTube API."""
-    api = _get_active_youtube_api(request.args.get('account_id'))
+    api = _get_active_youtube_api(request.args.get('account_id'), channel_id=request.args.get('channel_id'))
     query = request.args.get('q', '')
     max_results = int(request.args.get('max_results', 10))
     search_type = request.args.get('type', 'video')
@@ -98,7 +259,7 @@ def youtube_search():
 @youtube_bp.route('/api/youtube/analytics/<channel_id>', methods=['GET'])
 def youtube_analytics(channel_id: str):
     """Fetch analytics for a channel via YouTube API."""
-    api = _get_active_youtube_api(request.args.get('account_id'))
+    api = _get_active_youtube_api(request.args.get('account_id'), channel_id=channel_id)
     analytics = api.get_channel_analytics(channel_id)
     return jsonify(analytics)
 
@@ -144,6 +305,24 @@ def youtube_oauth_connect():
         if not redirect_uri:
             redirect_uri = request.json.get('redirect_uri')
 
+    # Resolve authenticated user ID if caller is logged in
+    auth_user_id = None
+    if hasattr(request, 'auth_user') and request.auth_user:
+        auth_user_id = request.auth_user.get('id')
+    if not auth_user_id:
+        auth = request.headers.get('Authorization', '')
+        if auth.startswith('Bearer '):
+            tok = auth[7:]
+            from api.services.manager_service import get_supabase
+            sm = get_supabase()
+            u = sm.verify_token(tok) if tok else None
+            if u:
+                auth_user_id = u.get('id')
+    if not auth_user_id and request.is_json and request.json:
+        auth_user_id = request.json.get('user_id')
+    if not auth_user_id:
+        auth_user_id = request.args.get('user_id')
+
     redirect_uri = _build_redirect_uri(request, redirect_uri)
 
     valid_clients = oauth.get_valid_clients() if hasattr(oauth, 'get_valid_clients') else oauth._clients
@@ -154,7 +333,7 @@ def youtube_oauth_connect():
         else:
             client_id = None
 
-    auth_url = oauth.get_authorization_url(client_id, redirect_uri=redirect_uri) if client_id else None
+    auth_url = oauth.get_authorization_url(client_id, redirect_uri=redirect_uri, auth_user_id=auth_user_id) if client_id else None
     if auth_url:
         return jsonify({
             "auth_url": auth_url,
@@ -208,13 +387,16 @@ try {{ if(window.opener) window.opener.postMessage({{type:'OAUTH_COMPLETE',statu
     email = user_info.get("email", "")
     display_name = user_info.get("name", email)
     picture = user_info.get("picture", "")
-    youtube_channel = token_data.get("youtube_channel", {})
-    channel_id = youtube_channel.get("id", "") if youtube_channel else ""
+    auth_user_id = token_data.get("auth_user_id")
+
+    # Multi-channel fleet detection
+    channels_list = token_data.get("youtube_channels") or []
+    youtube_channel = token_data.get("youtube_channel")
+    if not channels_list and youtube_channel:
+        channels_list = [youtube_channel]
 
     account_id = f"oauth-{email}" if email else "oauth-default"
     manager.save_account_token(account_id, token_data)
-    if channel_id:
-        manager.save_account_token(channel_id, token_data)
 
     # Update channel manager with connected account
     channel_manager = get_channel_manager()
@@ -244,63 +426,37 @@ try {{ if(window.opener) window.opener.postMessage({{type:'OAUTH_COMPLETE',statu
             refresh_token=token_data.get("refresh_token")
         )
 
-    # Update or add channel in channel manager
-    snippet = youtube_channel.get("snippet", {}) if youtube_channel else {}
-    stats = youtube_channel.get("statistics", {}) if youtube_channel else {}
-    channel_name = snippet.get("title", display_name) if youtube_channel else display_name
-    handle = snippet.get("customUrl", "")
-    description = snippet.get("description", "")
-    try:
-        subs = int(stats.get("subscriberCount", 0))
-    except (ValueError, TypeError):
-        subs = 0
-    try:
-        vids = int(stats.get("videoCount", 0))
-    except (ValueError, TypeError):
-        vids = 0
-    try:
-        views = int(stats.get("viewCount", 0))
-    except (ValueError, TypeError):
-        views = 0
+    # Sync all YouTube Studio channels into ChannelManager
+    primary_channel_name = display_name
+    for ch in channels_list:
+        cid = ch.get("id")
+        if cid:
+            manager.save_account_token(cid, token_data)
+        saved_ch = _sync_channel_from_youtube_data(ch, account_id, channel_manager)
+        if saved_ch and primary_channel_name == display_name:
+            primary_channel_name = saved_ch.name
 
-    if channel_id:
-        existing = channel_manager.get_channel(channel_id)
-        if existing:
-            existing.account_id = account_id
-            existing.name = channel_name
-            existing.handle = handle
-            existing.description = description
-            existing.subscriber_count = subs
-            existing.video_count = vids
-            existing.view_count = views
-            existing.custom_url = handle
-            channel_manager._save_channels()
-        else:
-            channel_manager.add_channel(
-                account_id=account_id,
-                channel_id=channel_id,
-                name=channel_name,
-                handle=handle,
-                description=description,
-                is_managed=True,
-                subscriber_count=subs,
-                video_count=vids,
-                view_count=views,
-                custom_url=handle
-            )
+    channel_name = primary_channel_name
 
-    # Persist to Supabase if connected
+    # Persist account and channels to Supabase database
     try:
         from api.services.manager_service import get_supabase
         sm = get_supabase()
         if sm.is_connected():
-            sm.add_account(
+            saved_supa_acc = sm.add_account(
                 email=email,
                 display_name=display_name,
                 account_type='personal',
                 google_access_token=token_data.get("access_token"),
-                google_refresh_token=token_data.get("refresh_token")
+                google_refresh_token=token_data.get("refresh_token"),
+                google_profile_image=picture,
+                auth_user_id=auth_user_id
             )
+            if saved_supa_acc and saved_supa_acc.get('id'):
+                supa_acc_id = saved_supa_acc['id']
+                manager.save_account_token(supa_acc_id, token_data)
+                for ch in channels_list:
+                    sm.upsert_channel(supa_acc_id, ch)
     except Exception as e:
         logger.warning(f"Could not persist connected account to Supabase: {e}")
 

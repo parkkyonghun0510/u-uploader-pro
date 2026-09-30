@@ -59,14 +59,17 @@ class YouTubeAPI:
 
     # ---- Channels ----
     def get_my_channels(self) -> List[dict]:
-        result = self._make_request("channels", {"part": "snippet,statistics,brandingSettings", "mine": "true"})
+        result = self._make_request("channels", {
+            "part": "snippet,statistics,contentDetails,brandingSettings,status",
+            "mine": "true"
+        })
         if result and "items" in result:
             return result["items"]
         return []
 
     def get_channel_details(self, channel_id: str) -> Optional[dict]:
         result = self._make_request("channels", {
-            "part": "snippet,statistics,contentDetails,brandingSettings",
+            "part": "snippet,statistics,contentDetails,brandingSettings,status",
             "id": channel_id
         })
         if result and "items" in result and result["items"]:
@@ -74,14 +77,86 @@ class YouTubeAPI:
         return None
 
     def get_channel_videos(self, channel_id: str, max_results: int = 50) -> List[dict]:
+        """
+        Fetch recent videos for a channel.
+        First attempts to read from channel's uploads playlist (1 quota unit)
+        with full video statistics, falling back to search if needed.
+        """
         videos = []
+        uploads_playlist_id = None
+        if channel_id and channel_id.startswith("UC") and len(channel_id) > 2:
+            uploads_playlist_id = "UU" + channel_id[2:]
+
+        # Method 1: Low-quota playlistItems from uploads playlist
+        if uploads_playlist_id:
+            try:
+                res = self._make_request("playlistItems", {
+                    "part": "snippet,contentDetails,status",
+                    "playlistId": uploads_playlist_id,
+                    "maxResults": min(50, max_results)
+                })
+                if res and "items" in res and res["items"]:
+                    items = res["items"]
+                    video_ids = [item.get("contentDetails", {}).get("videoId") for item in items if item.get("contentDetails", {}).get("videoId")]
+                    
+                    # Fetch rich statistics in batch
+                    stats_map = {}
+                    if video_ids:
+                        v_res = self._make_request("videos", {
+                            "part": "snippet,statistics,status,contentDetails",
+                            "id": ",".join(video_ids[:50])
+                        })
+                        if v_res and "items" in v_res:
+                            for v in v_res["items"]:
+                                stats_map[v.get("id")] = v
+
+                    for item in items:
+                        vid = item.get("contentDetails", {}).get("videoId")
+                        full_v = stats_map.get(vid, {})
+                        snippet = full_v.get("snippet") or item.get("snippet", {})
+                        v_stats = full_v.get("statistics", {})
+                        v_status = full_v.get("status") or item.get("status", {})
+                        
+                        try:
+                            v_views = int(v_stats.get("viewCount", 0))
+                        except (ValueError, TypeError):
+                            v_views = 0
+                        try:
+                            v_likes = int(v_stats.get("likeCount", 0))
+                        except (ValueError, TypeError):
+                            v_likes = 0
+                        try:
+                            v_comments = int(v_stats.get("commentCount", 0))
+                        except (ValueError, TypeError):
+                            v_comments = 0
+
+                        videos.append({
+                            "id": {"videoId": vid} if vid else item.get("id"),
+                            "videoId": vid,
+                            "snippet": snippet,
+                            "statistics": v_stats,
+                            "status": v_status,
+                            "view_count": v_views,
+                            "like_count": v_likes,
+                            "comment_count": v_comments,
+                            "privacy_status": v_status.get("privacyStatus", "public"),
+                            "watch_url": f"https://www.youtube.com/watch?v={vid}" if vid else "",
+                            "studio_url": f"https://studio.youtube.com/video/{vid}/edit" if vid else ""
+                        })
+                    if videos:
+                        return videos[:max_results]
+            except Exception:
+                pass
+
+        # Method 2: Fallback to search endpoint
         page_token = None
         while len(videos) < max_results:
             params = {
-                "part": "snippet,statistics",
+                "part": "snippet",
                 "channelId": channel_id,
                 "maxResults": min(50, max_results - len(videos)),
-                "order": "date"
+                "order": "date",
+                "type": "video"
             }
             if page_token:
                 params["pageToken"] = page_token
@@ -91,11 +166,96 @@ class YouTubeAPI:
             items = result["items"]
             if not items:
                 break
-            videos.extend(items)
+            for it in items:
+                vid = it.get("id", {}).get("videoId") if isinstance(it.get("id"), dict) else it.get("id")
+                it["videoId"] = vid
+                it["watch_url"] = f"https://www.youtube.com/watch?v={vid}" if vid else ""
+                it["studio_url"] = f"https://studio.youtube.com/video/{vid}/edit" if vid else ""
+                videos.append(it)
             page_token = result.get("nextPageToken")
             if not page_token:
                 break
         return videos[:max_results]
+
+    def get_studio_dashboard(self, channel_id: Optional[str] = None) -> dict:
+        """
+        Fetch comprehensive YouTube Studio data package for creator dashboard.
+        Includes channel branding, metrics, and recent video analytics.
+        """
+        channel_data = None
+        if channel_id:
+            channel_data = self.get_channel_details(channel_id)
+        if not channel_data:
+            channels = self.get_my_channels()
+            if channels:
+                channel_data = channels[0]
+
+        if not channel_data or not isinstance(channel_data, dict):
+            return {
+                "error": "channel_not_found",
+                "message": "No YouTube channel could be found for this token or channel ID."
+            }
+
+        cid = channel_data.get("id", channel_id or "")
+        snippet = channel_data.get("snippet", {})
+        stats = channel_data.get("statistics", {})
+        branding = channel_data.get("brandingSettings", {})
+        content_details = channel_data.get("contentDetails", {})
+
+        banner = (
+            branding.get("image", {}).get("bannerExternalUrl") or
+            branding.get("channel", {}).get("featuredImageUrl", "")
+        )
+        thumbs = snippet.get("thumbnails", {})
+        avatar = (
+            thumbs.get("high", {}).get("url") or
+            thumbs.get("medium", {}).get("url") or
+            thumbs.get("default", {}).get("url") or ""
+        )
+
+        try:
+            subs = int(stats.get("subscriberCount", 0))
+        except (ValueError, TypeError):
+            subs = 0
+        try:
+            vids = int(stats.get("videoCount", 0))
+        except (ValueError, TypeError):
+            vids = 0
+        try:
+            views = int(stats.get("viewCount", 0))
+        except (ValueError, TypeError):
+            views = 0
+
+        recent_videos = self.get_channel_videos(cid, max_results=12)
+
+        return {
+            "channel": {
+                "id": cid,
+                "title": snippet.get("title", ""),
+                "handle": snippet.get("customUrl", ""),
+                "description": snippet.get("description", ""),
+                "published_at": snippet.get("publishedAt", ""),
+                "country": snippet.get("country", ""),
+                "default_language": snippet.get("defaultLanguage", "en"),
+                "avatar_url": avatar,
+                "banner_url": banner,
+                "subscriber_count": subs,
+                "video_count": vids,
+                "view_count": views,
+                "hidden_subscriber_count": stats.get("hiddenSubscriberCount", False),
+                "uploads_playlist_id": content_details.get("relatedPlaylists", {}).get("uploads", f"UU{cid[2:]}" if cid.startswith("UC") else ""),
+                "studio_url": f"https://studio.youtube.com/channel/{cid}",
+                "studio_analytics_url": f"https://studio.youtube.com/channel/{cid}/analytics/tab-overview",
+                "studio_content_url": f"https://studio.youtube.com/channel/{cid}/videos/upload"
+            },
+            "recent_videos": recent_videos,
+            "analytics_summary": {
+                "subscribers": subs,
+                "total_views": views,
+                "total_videos": vids
+            },
+            "synced_at": datetime.now().isoformat()
+        }
 
     # ---- Video Upload ----
     def upload_video_resumable(

@@ -141,6 +141,48 @@ class ChannelApiTestCase(unittest.TestCase):
         self.assertEqual(res.get_json()['name'], 'NewName')
         self.assertEqual(self.cm.get_channel('UC1').handle, '@h')
 
+    def test_get_channel_detail(self):
+        acc = self._add_account()
+        self.cm.add_channel(account_id=acc.account_id, channel_id='UC999', name='Studio Master', handle='@studiomaster')
+        res = self.client.get('/api/channels/UC999')
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data['name'], 'Studio Master')
+        self.assertEqual(data['handle'], '@studiomaster')
+
+    def test_template_crud(self):
+        acc = self._add_account()
+        ch = self.cm.add_channel(account_id=acc.account_id, channel_id='UC1', name='C1')
+        tmpl = self.cm.add_template(channel_id='UC1', name='Preset 1', title_template='Title {video_title}')
+        
+        # GET single template
+        res = self.client.get(f'/api/templates/{tmpl.template_id}')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.get_json()['name'], 'Preset 1')
+        
+        # PATCH template
+        res_patch = self.client.patch(f'/api/templates/{tmpl.template_id}', json={'name': 'Preset Updated'})
+        self.assertEqual(res_patch.status_code, 200)
+        self.assertEqual(res_patch.get_json()['name'], 'Preset Updated')
+        self.assertEqual(self.cm.get_template(tmpl.template_id).name, 'Preset Updated')
+
+    def test_batch_patch(self):
+        batch = self.cm.create_batch(channel_id='UC1', account_id='acc1', name='Batch 1', video_paths=['v1.mp4'])
+        res = self.client.patch(f'/api/batches/{batch.batch_id}', json={'priority': 'high'})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.get_json()['priority'], 'high')
+        self.assertEqual(self.cm.get_batch(batch.batch_id).priority, 'high')
+
+    def test_channel_studio_hub(self):
+        acc = self._add_account()
+        self.cm.add_channel(account_id=acc.account_id, channel_id='UC_STUDIO', name='Studio Chan', subscriber_count=1500)
+        res = self.client.get('/api/channels/UC_STUDIO/studio')
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertIn('channel', data)
+        self.assertEqual(data['channel']['id'], 'UC_STUDIO')
+        self.assertEqual(data['channel']['subscriber_count'], 1500)
+
 
 if __name__ == '__main__':
     unittest.main()

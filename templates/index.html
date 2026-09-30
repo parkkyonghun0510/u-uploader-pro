@@ -35,7 +35,8 @@
         <div class="auth-container">
             <div class="auth-brand">
                 <div class="auth-brand-icon">
-                    <img src="{{ url_for('static', filename='img/logo-white.svg') }}" alt="YouTube Uploader Pro" class="brand-svg-logo">
+                    <img src="{{ url_for('static', filename='img/logo-white.svg') }}" alt="YouTube Uploader Pro"
+                        class="brand-svg-logo">
                 </div>
                 <h1 class="auth-brand-title">YT Uploader Pro</h1>
                 <p class="auth-brand-subtitle">Automated YouTube Studio & Channel Cloud Engine</p>
@@ -131,7 +132,8 @@
             <div class="sidebar-header">
                 <div class="logo">
                     <div class="logo-icon-wrap">
-                        <img src="{{ url_for('static', filename='img/logo-white.svg') }}" alt="YouTube Uploader Pro" class="brand-svg-icon">
+                        <img src="{{ url_for('static', filename='img/logo-white.svg') }}" alt="YouTube Uploader Pro"
+                            class="brand-svg-icon">
                     </div>
                     <div class="logo-text-group">
                         <span class="logo-title">YT UPLOADER</span>
@@ -360,14 +362,16 @@
                                     according to YouTube Studio quota.</small>
                             </div>
                             <div class="form-group">
-                                <label class="form-label"><i class="fab fa-youtube text-danger"></i> Target YouTube Channel</label>
+                                <label class="form-label"><i class="fab fa-youtube text-danger"></i> Target YouTube
+                                    Channel</label>
                                 <div class="input-with-icon">
                                     <i class="fab fa-youtube input-icon text-danger"></i>
                                     <select id="uploadChannelSelect" class="form-control">
                                         <option value="">Default Studio Profile</option>
                                     </select>
                                 </div>
-                                <small class="form-help">Select which connected YouTube channel will receive this upload.</small>
+                                <small class="form-help">Select which connected YouTube channel will receive this
+                                    upload.</small>
                             </div>
                             <div class="form-row">
                                 <div class="form-group">
@@ -596,16 +600,18 @@
                     <div class="tab" data-tab="templates"><i class="fas fa-layer-group"></i> <span>Templates</span>
                     </div>
                     <div class="tab" data-tab="bulk"><i class="fas fa-cubes"></i> <span>Bulk Upload</span></div>
-                    <div class="tab" data-tab="youtube"><i class="fab fa-youtube"></i> <span>YouTube API</span></div>
                 </div>
 
                 <!-- Accounts Tab -->
                 <div id="accountsTab">
                     <div class="tab-action-bar">
                         <div>
-                            <h2 class="tab-heading">YouTube Accounts <span class="tab-subheading">(Multi-Channel Fleet Command)</span></h2>
+                            <h2 class="tab-heading">YouTube Accounts <span class="tab-subheading">(Multi-Channel Fleet
+                                    Command)</span></h2>
                         </div>
                         <div class="action-buttons-group">
+                            <button class="btn btn-secondary" id="syncAccountsBtn" onclick="syncStudioData()"><i
+                                    class="fas fa-cloud-download-alt text-primary"></i> Sync Studio Data</button>
                             <button class="btn btn-secondary" id="refreshAccountsBtn" onclick="loadAccounts()"><i
                                     class="fas fa-sync-alt"></i> Refresh Status</button>
                             <button class="btn btn-primary" id="addAccountBtn" onclick="openAddAccountModal()"><i
@@ -632,21 +638,25 @@
                                 </span>
                             </div>
                             <p class="engine-description">
-                                Directly controls Firefox to upload videos into YouTube Studio. Bypasses Google API daily quota limits and handles full-length 4K videos.
+                                Directly controls Firefox to upload videos into YouTube Studio. Bypasses Google API
+                                daily quota limits and handles full-length 4K videos.
                             </p>
-                            
+
                             <div class="engine-cmd-box">
                                 <div class="engine-cmd-header">
-                                    <span class="engine-cmd-label"><i class="fas fa-terminal"></i> One-Time Terminal Sign-in</span>
+                                    <span class="engine-cmd-label"><i class="fas fa-terminal"></i> One-Time Terminal
+                                        Sign-in</span>
                                     <button type="button" class="btn-copy-chip" onclick="copyLoginCommand()">
                                         <i class="fas fa-copy"></i> Copy
                                     </button>
                                 </div>
-                                <code id="loginCliCommand" class="engine-code">python upload.py --login --profile default</code>
+                                <code id="loginCliCommand"
+                                    class="engine-code">python upload.py --login --profile default</code>
                             </div>
 
                             <div class="engine-actions-row">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="openBrowserLoginModal()">
+                                <button type="button" class="btn btn-secondary btn-sm"
+                                    onclick="openBrowserLoginModal()">
                                     <i class="fas fa-cookie-bite"></i> Session Profiles Guide
                                 </button>
                                 <div class="engine-meta-text" id="detectedProfilesSummary">
@@ -672,21 +682,25 @@
                                 </span>
                             </div>
                             <p class="engine-description">
-                                Official Google OAuth connection to sync channel metrics, subscriber statistics, avatars, and cloud state across your fleet via Supabase.
+                                Official Google OAuth connection to sync channel metrics, subscriber statistics,
+                                avatars, and cloud state across your fleet via Supabase.
                             </p>
 
                             <div class="engine-cmd-box">
                                 <div class="engine-cmd-header">
-                                    <span class="engine-cmd-label"><i class="fas fa-link"></i> Authorized Redirect URI</span>
+                                    <span class="engine-cmd-label"><i class="fas fa-link"></i> Authorized Redirect
+                                        URI</span>
                                     <button type="button" class="btn-copy-chip" onclick="copyRedirectUri()">
                                         <i class="fas fa-copy"></i> Copy
                                     </button>
                                 </div>
-                                <code id="hubRedirectUriDisplay" class="engine-code">http://localhost:8080/api/youtube/oauth/callback</code>
+                                <code id="hubRedirectUriDisplay"
+                                    class="engine-code">http://localhost:8080/api/youtube/oauth/callback</code>
                             </div>
 
                             <div class="engine-actions-row">
-                                <button type="button" class="btn btn-primary btn-sm btn-google-hub" id="connectGoogleBtn" onclick="connectGoogle()">
+                                <button type="button" class="btn btn-primary btn-sm btn-google-hub"
+                                    id="connectGoogleBtn" onclick="connectGoogle()">
                                     <i class="fab fa-google"></i> Connect with Google
                                 </button>
                                 <button type="button" class="btn btn-secondary btn-sm" onclick="openConfigOAuthModal()">
@@ -698,7 +712,8 @@
 
                     <!-- Fleet Section Header -->
                     <div class="fleet-section-header">
-                        <h3 class="fleet-title"><i class="fas fa-users-cog text-primary"></i> Connected Channel Fleet</h3>
+                        <h3 class="fleet-title"><i class="fas fa-users-cog text-primary"></i> Connected Channel Fleet
+                        </h3>
                         <span class="badge badge-neutral" id="accountCountBadge">0 Accounts</span>
                     </div>
 
@@ -715,8 +730,12 @@
                 <div id="channelsTab" class="hidden">
                     <div class="tab-action-bar">
                         <h2 class="tab-heading">My Channels</h2>
-                        <button class="btn btn-primary" id="addChannelBtn"><i class="fas fa-plus"></i> Add
-                            Channel</button>
+                        <div class="action-buttons-group">
+                            <button class="btn btn-secondary" id="syncChannelsBtn" onclick="syncStudioData()"><i
+                                    class="fas fa-cloud-download-alt text-primary"></i> Sync Studio Data</button>
+                            <button class="btn btn-primary" id="addChannelBtn"><i class="fas fa-plus"></i> Add
+                                Channel</button>
+                        </div>
                     </div>
                     <div class="channel-list" id="channelsList">
                         <div class="empty-state">
@@ -788,8 +807,11 @@
                                         </select>
                                     </div>
                                 </div>
-                                <button type="submit" class="btn btn-primary"><i class="fas fa-upload"></i>
-                                    Create Batch Workflow</button>
+                                <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+                                    <button type="submit" class="btn btn-primary btsn"><i class="fas fa-upload"></i>
+                                        Create Batch Workflow</button>
+                                </div>
+
                             </form>
                         </div>
                     </div>
@@ -801,31 +823,6 @@
                             <div id="batchList">
                                 <p class="text-muted">No batch uploads yet</p>
                             </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- YouTube API Tab -->
-                <div id="youtubeTab" class="hidden">
-                    <div class="youtube-api-section">
-                        <h4><i class="fab fa-youtube text-primary"></i> YouTube Data API v3</h4>
-                        <p class="text-muted" style="margin-bottom:16px;">Connect your official Google Cloud YouTube
-                            Data API key to manage channels, query subscriber analytics, and inspect videos
-                            programmatically.</p>
-                        <div class="api-key-input">
-                            <input type="text" id="apiKeyInput" class="form-control"
-                                placeholder="Enter your YouTube Data API Key...">
-                            <button class="btn btn-primary" id="saveApiKey"><i class="fas fa-key"></i> Save API
-                                Key</button>
-                        </div>
-                        <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
-                            <button class="btn btn-secondary" id="loadMyChannels"><i class="fas fa-tv"></i> Load My
-                                Channels</button>
-                            <button class="btn btn-secondary" id="searchYouTube"><i class="fas fa-search"></i> Search
-                                Videos</button>
-                        </div>
-                        <div id="youtubeResults">
-                            <p class="text-muted">Click a button above to query live YouTube data</p>
                         </div>
                     </div>
                 </div>

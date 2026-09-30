@@ -84,6 +84,48 @@ export const api = {
     },
 
     /**
+     * PATCH request helper
+     */
+    async patch(endpoint, data = {}, options = {}) {
+        const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+        const body = JSON.stringify(data);
+
+        const res = await secureFetch(endpoint, {
+            method: 'PATCH',
+            headers,
+            body,
+            ...options
+        });
+
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(json.error || json.message || `Status ${res.status}`);
+        }
+        return json;
+    },
+
+    /**
+     * PUT request helper
+     */
+    async put(endpoint, data = {}, options = {}) {
+        const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+        const body = JSON.stringify(data);
+
+        const res = await secureFetch(endpoint, {
+            method: 'PUT',
+            headers,
+            body,
+            ...options
+        });
+
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(json.error || json.message || `Status ${res.status}`);
+        }
+        return json;
+    },
+
+    /**
      * DELETE request helper
      */
     async delete(endpoint, options = {}) {

@@ -188,10 +188,24 @@ class SupabaseManager:
             return []
         try:
             profile = self.get_profile(auth_user_id)
+            if not profile and auth_user_id:
+                profile = self.ensure_profile(auth_user_id, "")
             if not profile:
                 return []
             result = self.client.table('accounts').select('*').eq('profile_id', profile['id']).execute()
-            return result.data or []
+            accounts = result.data or []
+            for acc in accounts:
+                if acc.get('google_access_token') and not acc.get('access_token'):
+                    acc['access_token'] = acc['google_access_token']
+                if acc.get('google_refresh_token') and not acc.get('refresh_token'):
+                    acc['refresh_token'] = acc['google_refresh_token']
+                if acc.get('id'):
+                    try:
+                        ch_res = self.client.table('channels').select('channel_id').eq('account_id', acc['id']).execute()
+                        acc['channels'] = [c['channel_id'] for c in (ch_res.data or []) if c.get('channel_id')]
+                    except Exception:
+                        acc['channels'] = acc.get('channels', [])
+            return accounts
         except Exception:
             return []
 
@@ -199,35 +213,103 @@ class SupabaseManager:
         """Create a new account for user's profile."""
         return self.add_account(email, display_name, account_type, auth_user_id=auth_user_id)
 
-    def add_account(self, email: str, display_name: str, account_type: str = 'personal', google_access_token: str = None, google_refresh_token: str = None, auth_user_id: Optional[str] = None) -> Optional[Dict]:
-        """Add a new account to the user's profile."""
+    def add_account(
+        self,
+        email: str,
+        display_name: str,
+        account_type: str = 'personal',
+        google_access_token: str = None,
+        google_refresh_token: str = None,
+        google_profile_image: str = None,
+        auth_user_id: Optional[str] = None
+    ) -> Optional[Dict]:
+        """Add or update an account linked to the user's profile."""
         if not self.is_connected():
             return None
         try:
-            profile = self.get_profile(auth_user_id)
+            profile = None
+            if auth_user_id:
+                profile = self.ensure_profile(auth_user_id, email, display_name)
+            if not profile:
+                profile = self.get_profile(auth_user_id)
+            if not profile and email:
+                res_p = self.client.table('profiles').select('*').eq('email', email).limit(1).execute()
+                if res_p.data:
+                    profile = res_p.data[0]
+            if not profile:
+                profile = self.ensure_profile(auth_user_id or "dev-user", email, display_name)
+
             if not profile:
                 return None
-            data = {
-                'email': email,
-                'display_name': display_name,
-                'account_type': account_type,
-                'profile_id': profile['id']
-            }
-            if google_access_token:
-                data['google_access_token'] = google_access_token
-            if google_refresh_token:
-                data['google_refresh_token'] = google_refresh_token
-            result = self.client.table('accounts').insert(data).execute()
-            return result.data[0] if result.data else None
-        except Exception:
+
+            profile_id = profile['id']
+            now_iso = datetime.now().isoformat()
+
+            # Check if account with this email already exists
+            existing = self.client.table('accounts').select('*').eq('email', email).limit(1).execute()
+            if existing and existing.data:
+                acc_id = existing.data[0]['id']
+                update_data = {
+                    'display_name': display_name or existing.data[0].get('display_name', ''),
+                    'account_type': account_type,
+                    'profile_id': profile_id,
+                    'is_active': True,
+                    'is_verified': True,
+                    'updated_at': now_iso
+                }
+                if google_access_token:
+                    update_data['google_access_token'] = google_access_token
+                if google_refresh_token:
+                    update_data['google_refresh_token'] = google_refresh_token
+                if google_profile_image:
+                    update_data['google_profile_image'] = google_profile_image
+                res = self.client.table('accounts').update(update_data).eq('id', acc_id).execute()
+                account = res.data[0] if res.data else existing.data[0]
+            else:
+                insert_data = {
+                    'email': email,
+                    'display_name': display_name,
+                    'account_type': account_type,
+                    'profile_id': profile_id,
+                    'is_active': True,
+                    'is_verified': True,
+                    'created_at': now_iso,
+                    'updated_at': now_iso
+                }
+                if google_access_token:
+                    insert_data['google_access_token'] = google_access_token
+                if google_refresh_token:
+                    insert_data['google_refresh_token'] = google_refresh_token
+                if google_profile_image:
+                    insert_data['google_profile_image'] = google_profile_image
+                res = self.client.table('accounts').insert(insert_data).execute()
+                account = res.data[0] if res.data else None
+
+            # Ensure profile connection
+            if account and account.get('id'):
+                try:
+                    conn_res = self.client.table('profile_connections').select('*').eq('profile_id', profile_id).eq('account_id', account['id']).limit(1).execute()
+                    if not conn_res.data:
+                        self.client.table('profile_connections').insert({
+                            'profile_id': profile_id,
+                            'account_id': account['id'],
+                            'connection_type': 'google',
+                            'is_primary': True
+                        }).execute()
+                except Exception:
+                    pass
+
+            return account
+        except Exception as e:
+            print(f"add_account error: {e}")
             return None
 
     def get_account(self, account_id: str) -> Optional[Dict]:
         """Get account by ID (only if owned by current profile)."""
-        if not self.is_connected():
+        if not self.is_connected() or not account_id:
             return None
         try:
-            result = self.client.table('accounts').select('*').eq('id', account_id).execute()
+            result = self.client.table('accounts').select('*').eq('id', account_id).limit(1).execute()
             if result.data and self._account_belongs_to_profile(result.data[0]):
                 return result.data[0]
             return None
@@ -312,36 +394,100 @@ class SupabaseManager:
 
     # ============ CHANNELS ============
 
-    def get_channels(self, account_id: Optional[str] = None) -> List[Dict]:
-        """Get channels, optionally filtered by account."""
+    def get_channels(self, account_id: Optional[str] = None, auth_user_id: Optional[str] = None) -> List[Dict]:
+        """Get channels, optionally filtered by account or user profile."""
         if not self.is_connected():
             return []
         try:
-            query = self.client.table('channels').select('*')
             if account_id:
-                query = query.eq('account_id', account_id)
-            result = query.execute()
-            return result.data or []
-        except:
+                query = self.client.table('channels').select('*').eq('account_id', account_id)
+                res = query.execute()
+                return res.data or []
+            if auth_user_id:
+                accs = self.get_accounts(auth_user_id)
+                acc_ids = [a['id'] for a in accs if a.get('id')]
+                if not acc_ids:
+                    return []
+                res = self.client.table('channels').select('*').in_('account_id', acc_ids).execute()
+                return res.data or []
+            res = self.client.table('channels').select('*').execute()
+            return res.data or []
+        except Exception:
             return []
 
-    def create_channel(self, account_id: str, channel_id: str, name: str, **kwargs) -> Optional[Dict]:
-        """Create a channel."""
-        if not self.is_connected():
+    def upsert_channel(self, account_id: str, ch_dict: Dict) -> Optional[Dict]:
+        """Upsert a YouTube channel record linked to a Supabase account."""
+        if not self.is_connected() or not account_id or not ch_dict:
             return None
         try:
-            if not self._account_belongs_to_profile({'id': account_id, 'profile_id': ''}):
+            cid = ch_dict.get('id') or ch_dict.get('channel_id')
+            if not cid:
                 return None
+
+            snippet = ch_dict.get('snippet', {}) if isinstance(ch_dict.get('snippet'), dict) else {}
+            stats = ch_dict.get('statistics', {}) if isinstance(ch_dict.get('statistics'), dict) else {}
+            branding = ch_dict.get('brandingSettings', {}) if isinstance(ch_dict.get('brandingSettings'), dict) else {}
+            thumbs = snippet.get('thumbnails', {}) if isinstance(snippet.get('thumbnails'), dict) else {}
+            avatar = (
+                thumbs.get('high', {}).get('url') or
+                thumbs.get('medium', {}).get('url') or
+                thumbs.get('default', {}).get('url') or
+                ch_dict.get('thumbnail_url', '')
+            )
+
+            name = ch_dict.get('name') or snippet.get('title') or 'YouTube Channel'
+            handle = ch_dict.get('handle') or snippet.get('customUrl') or ''
+            description = ch_dict.get('description') or snippet.get('description') or ''
+
+            try:
+                subs = int(stats.get('subscriberCount') or ch_dict.get('subscriber_count', 0))
+            except (ValueError, TypeError):
+                subs = 0
+            try:
+                vids = int(stats.get('videoCount') or ch_dict.get('video_count', 0))
+            except (ValueError, TypeError):
+                vids = 0
+            try:
+                views = int(stats.get('viewCount') or ch_dict.get('view_count', 0))
+            except (ValueError, TypeError):
+                views = 0
+
+            existing = self.client.table('channels').select('*').eq('channel_id', cid).limit(1).execute()
+            now_iso = datetime.now().isoformat()
             data = {
                 'account_id': account_id,
-                'channel_id': channel_id,
+                'channel_id': cid,
                 'name': name,
-                **kwargs
+                'handle': handle,
+                'description': description,
+                'subscriber_count': subs,
+                'video_count': vids,
+                'view_count': views,
+                'custom_url': handle,
+                'branding_settings': branding if branding else {'avatar': avatar},
+                'is_managed': True,
+                'status': 'active',
+                'updated_at': now_iso
             }
-            result = self.client.table('channels').insert(data).execute()
-            return result.data[0] if result.data else None
-        except:
+            if existing and existing.data:
+                res = self.client.table('channels').update(data).eq('id', existing.data[0]['id']).execute()
+                return res.data[0] if res.data else existing.data[0]
+            else:
+                data['created_at'] = now_iso
+                res = self.client.table('channels').insert(data).execute()
+                return res.data[0] if res.data else None
+        except Exception as e:
+            print(f"upsert_channel error: {e}")
             return None
+
+    def create_channel(self, account_id: str, channel_id: str, name: str, **kwargs) -> Optional[Dict]:
+        """Create or update a channel."""
+        ch_dict = {
+            'channel_id': channel_id,
+            'name': name,
+            **kwargs
+        }
+        return self.upsert_channel(account_id, ch_dict)
 
     # ============ UPLOAD JOBS ============
 

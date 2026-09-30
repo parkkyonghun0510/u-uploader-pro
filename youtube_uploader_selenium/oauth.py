@@ -3,7 +3,7 @@ import secrets
 import urllib.parse
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import requests
 
 
@@ -102,7 +102,7 @@ class GoogleOAuth2:
         }
         self._save_clients()
 
-    def get_authorization_url(self, client_id: str = None, redirect_uri: str = None) -> Optional[str]:
+    def get_authorization_url(self, client_id: str = None, redirect_uri: str = None, auth_user_id: str = None) -> Optional[str]:
         """Generate Google OAuth2 authorization URL."""
         valid_clients = self.get_valid_clients()
 
@@ -121,15 +121,19 @@ class GoogleOAuth2:
         if not client_id or not self.is_valid_client(self._clients.get(client_id, {})):
             return None
 
-        state = secrets.token_urlsafe(32)
+        state_token = secrets.token_urlsafe(32)
+        state = f"{state_token}:{auth_user_id}" if auth_user_id else state_token
         effective_redirect = self._get_redirect_uri(redirect_uri)
 
-        self._state_tokens[state] = {
+        state_meta = {
             "client_id": client_id,
             "redirect_uri": effective_redirect,
+            "auth_user_id": auth_user_id,
             "created_at": datetime.now().isoformat(),
             "expires_at": (datetime.now() + timedelta(minutes=10)).isoformat()
         }
+        self._state_tokens[state] = state_meta
+        self._state_tokens[state_token] = state_meta
 
         params = {
             "client_id": self._clients[client_id]["client_id"],
@@ -146,10 +150,23 @@ class GoogleOAuth2:
 
     def exchange_code(self, code: str, client_id: str = None, redirect_uri: str = None, state: str = None) -> Optional[dict]:
         """Exchange authorization code for access token."""
-        if not client_id and state and state in self._state_tokens:
-            client_id = self._state_tokens[state].get("client_id")
-            if not redirect_uri:
-                redirect_uri = self._state_tokens[state].get("redirect_uri")
+        auth_user_id = None
+        if state:
+            if state in self._state_tokens:
+                auth_user_id = self._state_tokens[state].get("auth_user_id")
+                if not client_id:
+                    client_id = self._state_tokens[state].get("client_id")
+                if not redirect_uri:
+                    redirect_uri = self._state_tokens[state].get("redirect_uri")
+            elif ":" in state:
+                parts = state.split(":", 1)
+                prefix = parts[0]
+                auth_user_id = parts[1]
+                if prefix in self._state_tokens:
+                    if not client_id:
+                        client_id = self._state_tokens[prefix].get("client_id")
+                    if not redirect_uri:
+                        redirect_uri = self._state_tokens[prefix].get("redirect_uri")
 
         if not client_id and self._clients:
             sorted_clients = sorted(self._clients.values(), key=lambda x: x.get("created_at", ""), reverse=True)
@@ -179,10 +196,13 @@ class GoogleOAuth2:
             user_info = self._fetch_user_info(access_token)
 
             # Fetch YouTube channel info
-            youtube_info = self._fetch_youtube_channel(access_token)
+            all_channels = self._fetch_all_youtube_channels(access_token)
+            youtube_info = all_channels[0] if all_channels else self._fetch_youtube_channel(access_token)
 
             token_data["user_info"] = user_info
             token_data["youtube_channel"] = youtube_info
+            token_data["youtube_channels"] = all_channels
+            token_data["auth_user_id"] = auth_user_id
             token_data["expires_at"] = (datetime.now() + timedelta(seconds=token_data.get("expires_in", 3600))).isoformat()
 
             return token_data
@@ -228,17 +248,20 @@ class GoogleOAuth2:
 
     def _fetch_youtube_channel(self, access_token: str) -> Optional[dict]:
         """Fetch YouTube channel details."""
+        channels = self._fetch_all_youtube_channels(access_token)
+        return channels[0] if channels else None
+
+    def _fetch_all_youtube_channels(self, access_token: str) -> List[dict]:
+        """Fetch all YouTube channels associated with this access token."""
         try:
             headers = {"Authorization": f"Bearer {access_token}"}
-            params = {"part": "snippet,statistics,brandingSettings", "mine": "true"}
+            params = {"part": "snippet,statistics,brandingSettings,contentDetails,status", "mine": "true"}
             response = requests.get(self.YOUTUBE_ACCOUNT_URL, headers=headers, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
-            if data.get("items"):
-                return data["items"][0]
-            return None
+            return data.get("items", [])
         except:
-            return None
+            return []
 
     def _get_redirect_uri(self, custom_uri: Optional[str] = None) -> str:
         """Get the OAuth redirect URI."""
