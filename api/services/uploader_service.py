@@ -187,6 +187,20 @@ def _execute_api_upload(job, access_token: str):
         job.add_log(f"Upload completed successfully via YouTube Data API v3! Video ID: {video_id}")
         logger.info(f"Upload {job.job_id} completed successfully via API. Video ID: {video_id}")
     else:
+        # Check if fallback to Selenium is viable
+        profiles_dir = Path("./profiles")
+        default_dir = Path("./profile")
+        has_selenium_profile = bool(
+            job.profile_path or
+            default_dir.exists() or
+            (profiles_dir.exists() and any(p.is_dir() for p in profiles_dir.iterdir()))
+        )
+        if has_selenium_profile:
+            job.add_log(f"YouTube Data API upload unavailable ({err}). Automatically falling back to browser automation (Selenium)...")
+            logger.warning(f"Job {job.job_id}: API upload failed ({err}). Falling back to Selenium.")
+            _execute_selenium_upload(job)
+            return
+
         job.status = UploadStatus.FAILED
         job.error_message = err or "Upload failed via YouTube API"
         job.completed_at = datetime.now().isoformat()
@@ -202,12 +216,11 @@ def _execute_selenium_upload(job):
         metadata_json_path=job.metadata_path,
         thumbnail_path=job.thumbnail_path,
         profile_path=job.profile_path,
-        job_id=job.job_id
     )
 
-    uploader.add_log(f"Starting upload via Selenium for {job.video_path}")
+    job.add_log(f"Starting upload via Selenium for {job.video_path}")
     if job.channel_id:
-        uploader.add_log(f"Target channel: {job.channel_id}")
+        job.add_log(f"Target channel: {job.channel_id}")
     was_uploaded, video_id = uploader.upload()
 
     if was_uploaded:
@@ -215,7 +228,7 @@ def _execute_selenium_upload(job):
         job.video_id = video_id
         job.progress = 100.0
         job.completed_at = datetime.now().isoformat()
-        uploader.add_log(f"Upload completed! Video ID: {video_id}")
+        job.add_log(f"Upload completed! Video ID: {video_id}")
         logger.info(f"Upload {job.job_id} completed successfully via Selenium")
     else:
         job.status = UploadStatus.FAILED
