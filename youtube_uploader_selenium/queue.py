@@ -1,4 +1,6 @@
 import json
+import os
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
@@ -11,31 +13,50 @@ class UploadQueue:
     def __init__(self):
         self._jobs: dict[str, UploadJob] = {}
         self._history_file = Path.cwd() / 'queue' / 'queue.json'
+        self._lock = threading.Lock()
         self._load_queue()
 
     def add_job(self, job: UploadJob):
-        self._jobs[job.job_id] = job
+        with self._lock:
+            self._jobs[job.job_id] = job
         self._save_queue()
 
     def get_job(self, job_id: str) -> Optional[UploadJob]:
         return self._jobs.get(job_id)
 
+    def get_jobs(self) -> List[UploadJob]:
+        """Public accessor for all jobs."""
+        with self._lock:
+            return list(self._jobs.values())
+
+    def _sort_jobs(self, jobs: List[UploadJob]) -> List[UploadJob]:
+        return sorted(
+            jobs,
+            key=lambda j: (-self._priority_value(j.priority), j.created_at or ''),
+        )
+
     def get_all_jobs(self, status_filter: Optional[str] = None) -> List[UploadJob]:
-        jobs = list(self._jobs.values())
+        with self._lock:
+            jobs = list(self._jobs.values())
         if status_filter:
             jobs = [j for j in jobs if j.status.value == status_filter]
-        return sorted(jobs, key=lambda j: self._priority_value(j.priority))
+        return self._sort_jobs(jobs)
 
     def get_pending_jobs(self) -> List[UploadJob]:
-        return [j for j in self._jobs.values() if j.status in [UploadStatus.PENDING, UploadStatus.SCHEDULED]]
+        with self._lock:
+            jobs = [j for j in self._jobs.values()
+                    if j.status in [UploadStatus.PENDING, UploadStatus.SCHEDULED]]
+        return self._sort_jobs(jobs)
 
     def remove_job(self, job_id: str):
-        self._jobs.pop(job_id, None)
+        with self._lock:
+            self._jobs.pop(job_id, None)
         self._save_queue()
 
     def clear_completed(self):
-        self._jobs = {k: v for k, v in self._jobs.items()
-                      if v.status not in [UploadStatus.COMPLETED, UploadStatus.CANCELLED]}
+        with self._lock:
+            self._jobs = {k: v for k, v in self._jobs.items()
+                          if v.status not in [UploadStatus.COMPLETED, UploadStatus.CANCELLED]}
         self._save_queue()
 
     def get_queue_stats(self) -> dict:
@@ -58,9 +79,12 @@ class UploadQueue:
 
     def _save_queue(self):
         self._history_file.parent.mkdir(parents=True, exist_ok=True)
-        data = [job.to_dict() for job in self._jobs.values()]
-        with open(self._history_file, 'w') as f:
+        with self._lock:
+            data = [job.to_dict() for job in self._jobs.values()]
+        tmp_file = self._history_file.with_suffix(self._history_file.suffix + '.tmp')
+        with open(tmp_file, 'w') as f:
             json.dump(data, f, indent=2)
+        os.replace(tmp_file, self._history_file)
 
     def _load_queue(self):
         if self._history_file.exists():
@@ -87,6 +111,18 @@ class UploadQueue:
                     job.logs = item.get('logs', [])
                     job.retry_count = item.get('retry_count', 0)
                     job.max_retries = item.get('max_retries', 3)
+                    job.channel_id = item.get('channel_id')
+                    job.template_id = item.get('template_id')
+                    job.metadata = item.get('metadata') or None
+                    # Recovery sweep: no worker is running after restart, so any
+                    # job persisted as IN_PROGRESS is actually interrupted.
+                    if job.status == UploadStatus.IN_PROGRESS:
+                        job.status = UploadStatus.FAILED
+                        job.error_message = (
+                            job.error_message
+                            or 'Upload interrupted: process restarted while job was in progress'
+                        )
+                        job.add_log('Reset to FAILED after restart (was IN_PROGRESS)')
                     self._jobs[job.job_id] = job
             except Exception:
                 pass

@@ -28,7 +28,7 @@ def require_auth(f):
         # Fallback for local development or dev-issued token if Supabase is offline
         if not user and token:
             is_dev = current_app and (current_app.debug or current_app.config.get('ENV') == 'development')
-            if token.startswith('local-dev-jwt-'):
+            if is_dev and token.startswith('local-dev-jwt-'):
                 email = token.replace('local-dev-jwt-', '', 1)
                 user = {"id": f"local-{email}", "email": email}
             elif is_dev and token in ('dev-token', 'test-token', 'mock-token'):

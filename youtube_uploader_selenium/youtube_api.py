@@ -8,6 +8,10 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 
+class UploadCancelledError(Exception):
+    """Raised when an upload is cancelled mid-flight (between chunks)."""
+
+
 class YouTubeAPI:
     def __init__(self, access_token: Optional[str] = None, api_key: Optional[str] = None):
         self.base_url = "https://www.googleapis.com/youtube/v3"
@@ -378,6 +382,8 @@ class YouTubeAPI:
                         else:
                             last_err = f"HTTP {chunk_resp.status_code}: {chunk_resp.text}"
                             time.sleep(2 ** attempt)
+                    except UploadCancelledError:
+                        raise
                     except Exception as e:
                         last_err = str(e)
                         time.sleep(2 ** attempt)

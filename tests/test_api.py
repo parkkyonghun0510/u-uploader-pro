@@ -58,6 +58,7 @@ class ApiTestCase(unittest.TestCase):
             '/api/templates',
             '/api/batches',
             '/api/auth/me',
+            '/api/youtube/channels',
             '/api/supabase/stats',
             '/api/supabase/profile',
             '/api/supabase/accounts',
@@ -107,28 +108,31 @@ class ApiTestCase(unittest.TestCase):
 
     def test_oauth_config_and_registration(self):
         """Verify OAuth configuration retrieval and registration endpoints."""
-        res = self.client.get('/api/youtube/oauth/config')
-        self.assertEqual(res.status_code, 200)
-        data = res.get_json()
-        self.assertIn('configured', data)
-        self.assertIn('redirect_uri', data)
+        from unittest.mock import patch
+        fake_auth = lambda f: f
+        with patch('api.routes.youtube.require_auth', fake_auth):
+            res = self.client.get('/api/youtube/oauth/config')
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertIn('configured', data)
+            self.assertIn('redirect_uri', data)
 
-        # Register a client
-        reg_res = self.client.post('/api/youtube/oauth/register', json={
-            'client_id': 'test-client-id-123.apps.googleusercontent.com',
-            'client_secret': 'test-secret-456',
-            'name': 'Test Client'
-        })
-        self.assertEqual(reg_res.status_code, 200)
-        reg_data = reg_res.get_json()
-        self.assertEqual(reg_data.get('client_id'), 'test-client-id-123.apps.googleusercontent.com')
+            # Register a client
+            reg_res = self.client.post('/api/youtube/oauth/register', json={
+                'client_id': 'test-client-id-123.apps.googleusercontent.com',
+                'client_secret': 'test-secret-456',
+                'name': 'Test Client'
+            })
+            self.assertEqual(reg_res.status_code, 200)
+            reg_data = reg_res.get_json()
+            self.assertEqual(reg_data.get('client_id'), 'test-client-id-123.apps.googleusercontent.com')
 
-        # Check config reflects the configured client
-        res_after = self.client.get('/api/youtube/oauth/config')
-        self.assertEqual(res_after.status_code, 200)
-        data_after = res_after.get_json()
-        self.assertTrue(data_after.get('configured'))
-        self.assertEqual(data_after.get('client', {}).get('client_id'), 'test-client-id-123.apps.googleusercontent.com')
+            # Check config reflects the configured client
+            res_after = self.client.get('/api/youtube/oauth/config')
+            self.assertEqual(res_after.status_code, 200)
+            data_after = res_after.get_json()
+            self.assertTrue(data_after.get('configured'))
+            self.assertEqual(data_after.get('client', {}).get('client_id'), 'test-client-id-123.apps.googleusercontent.com')
 
     def test_browser_profiles_endpoint(self):
         """Verify browser profiles listing endpoint."""

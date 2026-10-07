@@ -79,6 +79,8 @@ def supabase_upload():
         channel_id = data.get('channel_id')
         if not file_path or not os.path.exists(file_path):
             return jsonify({"error": "File not found"}), 400
+        if os.path.isabs(file_path) or '..' in file_path.replace('\\', '/').split('/'):
+            return jsonify({"error": "Invalid file_path: absolute paths and '..' traversal are not allowed"}), 400
         url = supabase.upload_video(file_path, bucket, channel_id)
         if url:
             return jsonify({"success": True, "url": url})

@@ -1,5 +1,6 @@
 """Socket.IO real-time event handlers."""
-from flask_socketio import emit
+from flask import request, current_app
+from flask_socketio import emit, join_room
 from api.extensions import logger
 from api.services.manager_service import (
     get_upload_queue,
@@ -8,11 +9,55 @@ from api.services.manager_service import (
 )
 
 
+def _extract_socket_token():
+    """Pull the auth token from a Socket.IO connect request.
+
+    Mirrors api/auth.py: bearer header, ?token= query param, or the
+    `auth` payload dict sent by the socket.io client.
+    """
+    header = request.headers.get('Authorization', '')
+    if header.startswith('Bearer '):
+        return header[7:]
+    return request.args.get('token') or request.args.get('auth_token')
+
+
+def _authenticate_socket() -> bool:
+    """Verify the socket client's token using the same rules as api/auth.py."""
+    token = _extract_socket_token()
+    if not token:
+        return False
+    supabase = get_supabase()
+    user = supabase.verify_token(token)
+    if user:
+        return True
+    # Local-dev fallbacks, same as require_auth.
+    is_dev = current_app and (current_app.debug or current_app.config.get('ENV') == 'development')
+    if is_dev and token.startswith('local-dev-jwt-'):
+        return True
+    if is_dev and token in ('dev-token', 'test-token', 'mock-token'):
+        return True
+    return False
+
+
 def register_socket_events(socketio):
     """Register all Socket.IO real-time event handlers."""
 
     @socketio.on('connect')
-    def handle_connect():
+    def handle_connect(auth=None):
+        if isinstance(auth, dict) and auth.get('token') and not _extract_socket_token():
+            # Client passed the token via the socket.io `auth` payload; honour it.
+            token = auth.get('token')
+            user = get_supabase().verify_token(token)
+            if not user:
+                is_dev = current_app and (current_app.debug or current_app.config.get('ENV') == 'development')
+                if is_dev and (token.startswith('local-dev-jwt-') or token in ('dev-token', 'test-token', 'mock-token')):
+                    user = {"id": "local-dev-user"}
+            if not user:
+                logger.warning('Socket connection rejected: unauthorized')
+                return False
+        elif not _authenticate_socket():
+            logger.warning('Socket connection rejected: unauthorized')
+            return False
         supabase = get_supabase()
         logger.info('Client connected')
         emit('connection', {"status": "connected"})
@@ -44,6 +89,9 @@ def register_socket_events(socketio):
     @socketio.on('subscribe_upload_progress')
     def handle_subscribe_progress(data):
         job_id = data.get('job_id')
+        if job_id:
+            # Scope the client to this job's room so progress is only pushed to subscribers.
+            join_room(str(job_id))
         logger.info(f"Client subscribed to job {job_id} progress")
         emit('subscribed', {"job_id": job_id, "status": "active"})
 

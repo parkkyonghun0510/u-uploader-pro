@@ -2,6 +2,7 @@
 from datetime import datetime
 from flask import Blueprint, request, jsonify
 from api.extensions import logger
+from api.auth import require_auth
 from api.services.manager_service import (
     get_classes,
     get_google_oauth,
@@ -15,6 +16,7 @@ youtube_bp = Blueprint('youtube', __name__)
 # ============ YOUTUBE API ENDPOINTS ============
 
 @youtube_bp.route('/api/youtube/auth', methods=['GET', 'POST'])
+@require_auth
 def youtube_auth():
     """Authenticate, configure, and inspect YouTube Data API key/status."""
     _, _, _, _, _, _, _, YouTubeAPI, _, _, _, _, _, _ = get_classes()
@@ -143,6 +145,7 @@ def _sync_channel_from_youtube_data(ch_dict: dict, account_id: str, channel_mana
 
 
 @youtube_bp.route('/api/youtube/channels', methods=['GET'])
+@require_auth
 def youtube_get_channels():
     """Fetch current user channels from YouTube API."""
     api = _get_active_youtube_api(request.args.get('account_id'), channel_id=request.args.get('channel_id'))
@@ -151,6 +154,7 @@ def youtube_get_channels():
 
 
 @youtube_bp.route('/api/youtube/channels/<channel_id>', methods=['GET'])
+@require_auth
 def youtube_get_channel_details(channel_id: str):
     """Fetch specific channel details from YouTube API."""
     api = _get_active_youtube_api(request.args.get('account_id'), channel_id=channel_id)
@@ -161,6 +165,7 @@ def youtube_get_channel_details(channel_id: str):
 
 
 @youtube_bp.route('/api/youtube/channels/<channel_id>/videos', methods=['GET'])
+@require_auth
 def youtube_get_channel_videos(channel_id: str):
     """Fetch videos for a given channel."""
     api = _get_active_youtube_api(request.args.get('account_id'), channel_id=channel_id)
@@ -170,6 +175,7 @@ def youtube_get_channel_videos(channel_id: str):
 
 
 @youtube_bp.route('/api/youtube/studio/<channel_id>', methods=['GET'])
+@require_auth
 def youtube_get_studio(channel_id: str):
     """Retrieve full YouTube Studio dashboard data for a channel."""
     api = _get_active_youtube_api(request.args.get('account_id'), channel_id=channel_id)
@@ -221,6 +227,7 @@ def youtube_get_studio(channel_id: str):
 
 
 @youtube_bp.route('/api/youtube/sync-studio', methods=['POST'])
+@require_auth
 def youtube_sync_studio():
     """Sync YouTube Studio channel data and statistics for all or specified connected accounts."""
     data = request.get_json(silent=True) or {}
@@ -262,6 +269,7 @@ def youtube_sync_studio():
 
 
 @youtube_bp.route('/api/youtube/search', methods=['GET'])
+@require_auth
 def youtube_search():
     """Search videos or channels via YouTube API."""
     api = _get_active_youtube_api(request.args.get('account_id'), channel_id=request.args.get('channel_id'))
@@ -276,6 +284,7 @@ def youtube_search():
 
 
 @youtube_bp.route('/api/youtube/analytics/<channel_id>', methods=['GET'])
+@require_auth
 def youtube_analytics(channel_id: str):
     """Fetch analytics for a channel via YouTube API."""
     api = _get_active_youtube_api(request.args.get('account_id'), channel_id=channel_id)
@@ -299,6 +308,7 @@ def _build_redirect_uri(req, custom_uri: str = None) -> str:
 # ============ OAUTH2 ENDPOINTS ============
 
 @youtube_bp.route('/api/youtube/oauth/config', methods=['GET'])
+@require_auth
 def youtube_oauth_config():
     """Check OAuth setup status and retrieve dynamic redirect URI."""
     oauth = get_google_oauth()
@@ -314,6 +324,7 @@ def youtube_oauth_config():
 
 @youtube_bp.route('/api/oauth/google', methods=['GET', 'POST'])
 @youtube_bp.route('/api/youtube/oauth/connect', methods=['GET', 'POST'])
+@require_auth
 def youtube_oauth_connect():
     """Generate Google OAuth2 authorization URL."""
     oauth = get_google_oauth()
@@ -366,6 +377,7 @@ def youtube_oauth_connect():
 
 
 @youtube_bp.route('/api/youtube/oauth/callback', methods=['GET'])
+@require_auth
 def youtube_oauth_callback():
     """Handle Google OAuth2 callback and token exchange."""
     code = request.args.get('code')
@@ -520,6 +532,7 @@ setTimeout(function(){{
 
 
 @youtube_bp.route('/api/youtube/oauth/status', methods=['GET'])
+@require_auth
 def youtube_oauth_status():
     """Check if user has valid OAuth tokens for account."""
     manager = get_oauth_manager()
@@ -537,6 +550,7 @@ def youtube_oauth_status():
 
 
 @youtube_bp.route('/api/youtube/oauth/register', methods=['POST'])
+@require_auth
 def youtube_oauth_register():
     """Register or update a Google OAuth client."""
     data = request.json or {}

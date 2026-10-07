@@ -1,5 +1,7 @@
 """Upload execution, scheduling, history, and real-time progress services."""
 import json
+import os
+import random
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +17,36 @@ from .manager_service import (
     get_google_oauth,
     get_channel_manager,
 )
+from youtube_uploader_selenium.youtube_api import UploadCancelledError
+
+
+def _is_cancelled(job) -> bool:
+    """True when the job carries a cancellation flag."""
+    return isinstance(job.metadata, dict) and job.metadata.get('cancelled') is True
+
+
+_job_timers = {}
+_job_timers_lock = threading.Lock()
+_history_lock = threading.Lock()
+
+MAX_RETRY_WALL_SECONDS = 3600
+RETRY_BASE_SECONDS = 10
+RETRY_FACTOR = 2
+RETRY_CAP_SECONDS = 300
+
+
+def track_job_timer(job_id: str, timer: threading.Timer):
+    """Register a pending retry/schedule timer so it can be cancelled."""
+    with _job_timers_lock:
+        _job_timers[job_id] = timer
+
+
+def cancel_job_timers(job_id: str):
+    """Cancel any pending retry/schedule timer for this job."""
+    with _job_timers_lock:
+        timer = _job_timers.pop(job_id, None)
+    if timer is not None:
+        timer.cancel()
 
 
 def _get_logs_dir() -> Path:
@@ -33,7 +65,7 @@ def broadcast_progress(job_id: str):
     job = queue.get_job(job_id)
     if job:
         try:
-            socketio.emit('upload_progress', job.to_dict())
+            socketio.emit('upload_progress', job.to_dict(), room=str(job_id))
         except Exception as e:
             logger.debug(f"SocketIO broadcast notice: {e}")
         try:
@@ -65,19 +97,30 @@ def save_job_history(job):
     logs_dir = _get_logs_dir()
     logs_dir.mkdir(parents=True, exist_ok=True)
     history_file = logs_dir / 'upload_history.json'
-    history = []
-    if history_file.exists():
+    with _history_lock:
+        history = []
+        if history_file.exists():
+            try:
+                with open(history_file, 'r', encoding='utf-8') as f:
+                    history = json.load(f)
+            except Exception:
+                history = []
+        # Dedupe by job_id: update the existing record in place.
+        replaced = False
+        for idx, entry in enumerate(history):
+            if isinstance(entry, dict) and entry.get('job_id') == str(job.job_id):
+                history[idx] = job.to_dict()
+                replaced = True
+                break
+        if not replaced:
+            history.append(job.to_dict())
+        tmp_file = history_file.with_suffix(history_file.suffix + '.tmp')
         try:
-            with open(history_file, 'r', encoding='utf-8') as f:
-                history = json.load(f)
-        except Exception:
-            history = []
-    history.append(job.to_dict())
-    try:
-        with open(history_file, 'w', encoding='utf-8') as f:
-            json.dump(history, f, indent=2)
-    except Exception as e:
-        logger.error(f"Error saving job history locally: {e}")
+            with open(tmp_file, 'w', encoding='utf-8') as f:
+                json.dump(history, f, indent=2)
+            os.replace(tmp_file, history_file)
+        except Exception as e:
+            logger.error(f"Error saving job history locally: {e}")
 
     try:
         sm = get_supabase()
@@ -165,21 +208,36 @@ def _execute_api_upload(job, access_token: str):
     logger.info(f"Job {job.job_id}: starting YouTube Data API v3 upload: {title}")
 
     def progress_callback(pct: float):
+        if _is_cancelled(job):
+            raise UploadCancelledError("Upload cancelled by user")
         job.progress = pct
         broadcast_progress(job.job_id)
 
-    success, video_id, err = api.upload_video_resumable(
-        video_path=job.video_path,
-        title=title,
-        description=description,
-        tags=tags,
-        category=category,
-        privacy=privacy,
-        thumbnail_path=job.thumbnail_path,
-        progress_callback=progress_callback
-    )
+    try:
+        success, video_id, err = api.upload_video_resumable(
+            video_path=job.video_path,
+            title=title,
+            description=description,
+            tags=tags,
+            category=category,
+            privacy=privacy,
+            thumbnail_path=job.thumbnail_path,
+            progress_callback=progress_callback
+        )
+    except UploadCancelledError:
+        job.status = UploadStatus.CANCELLED
+        job.error_message = "Cancelled by user"
+        job.completed_at = datetime.now().isoformat()
+        job.add_log("Upload cancelled before completion")
+        return
 
     if success:
+        if _is_cancelled(job):
+            job.status = UploadStatus.CANCELLED
+            job.error_message = "Cancelled by user"
+            job.completed_at = datetime.now().isoformat()
+            job.add_log("Upload cancelled before completion")
+            return
         job.status = UploadStatus.COMPLETED
         job.video_id = video_id
         job.progress = 100.0
@@ -187,6 +245,12 @@ def _execute_api_upload(job, access_token: str):
         job.add_log(f"Upload completed successfully via YouTube Data API v3! Video ID: {video_id}")
         logger.info(f"Upload {job.job_id} completed successfully via API. Video ID: {video_id}")
     else:
+        if _is_cancelled(job):
+            job.status = UploadStatus.CANCELLED
+            job.error_message = "Cancelled by user"
+            job.completed_at = datetime.now().isoformat()
+            job.add_log("Upload cancelled")
+            return
         # Check if fallback to Selenium is viable
         profiles_dir = Path("./profiles")
         default_dir = Path("./profile")
@@ -222,6 +286,13 @@ def _execute_selenium_upload(job):
     if job.channel_id:
         job.add_log(f"Target channel: {job.channel_id}")
     was_uploaded, video_id = uploader.upload()
+
+    if _is_cancelled(job):
+        job.status = UploadStatus.CANCELLED
+        job.error_message = "Cancelled by user"
+        job.completed_at = datetime.now().isoformat()
+        job.add_log("Upload cancelled")
+        return
 
     if was_uploaded:
         job.status = UploadStatus.COMPLETED
@@ -266,15 +337,49 @@ def _update_batch_progress(job):
         logger.warning(f"Failed to update batch progress for job {job.job_id}: {e}")
 
 
+def _retry_wall_time_exceeded(job) -> bool:
+    started = job.started_at or job.created_at
+    try:
+        return (datetime.now() - datetime.fromisoformat(started)).total_seconds() > MAX_RETRY_WALL_SECONDS
+    except Exception:
+        return False
+
+
+def _schedule_retry(job):
+    """Schedule a retry with exponential backoff + jitter, honoring max_retries and wall time."""
+    _, _, UploadStatus, _, _, _, _, _, _, _, _, _, _, _ = get_classes()
+    if job.retry_count >= job.max_retries or not job.max_retries:
+        return
+    if _retry_wall_time_exceeded(job):
+        job.add_log("Retry skipped: max retry wall-time exceeded")
+        return
+    job.retry_count += 1
+    job.status = UploadStatus.PENDING
+    delay = min(RETRY_CAP_SECONDS, RETRY_BASE_SECONDS * (RETRY_FACTOR ** (job.retry_count - 1)))
+    delay = min(RETRY_CAP_SECONDS, delay * random.uniform(0.75, 1.25))
+    job.add_log(f"Retry scheduled (attempt {job.retry_count}/{job.max_retries}) in {delay:.1f}s")
+    timer = threading.Timer(delay, start_upload_thread, args=[job.job_id])
+    timer.daemon = True
+    track_job_timer(job.job_id, timer)
+    timer.start()
+
+
 def start_upload_thread(job_id: str):
     """Background worker thread to run YouTube upload via YouTube Data API v3 or Selenium."""
     queue = get_upload_queue()
     job = queue.get_job(job_id)
     if not job:
         return
+    if _is_cancelled(job):
+        _, _, UploadStatus, _, _, _, _, _, _, _, _, _, _, _ = get_classes()
+        job.status = UploadStatus.CANCELLED
+        return
 
     try:
         _, _, UploadStatus, _, _, _, _, _, _, _, _, _, _, _ = get_classes()
+        if _is_cancelled(job):
+            job.status = UploadStatus.CANCELLED
+            return
         job.status = UploadStatus.IN_PROGRESS
         job.started_at = datetime.now().isoformat()
         job.progress = 0.0
@@ -295,17 +400,24 @@ def start_upload_thread(job_id: str):
             job.add_log("No active OAuth token found, falling back to Selenium browser uploader")
             _execute_selenium_upload(job)
 
+        # Failures detected via the normal return path also trigger retry.
+        if not _is_cancelled(job):
+            _, _, UploadStatus, _, _, _, _, _, _, _, _, _, _, _ = get_classes()
+            if job.status == UploadStatus.FAILED:
+                _schedule_retry(job)
+
     except Exception as e:
         _, _, UploadStatus, _, _, _, _, _, _, _, _, _, _, _ = get_classes()
-        job.status = UploadStatus.FAILED
-        job.error_message = str(e)
-        job.completed_at = datetime.now().isoformat()
-        logger.error(f"Upload {job_id} error: {str(e)}")
-        if job.retry_count < job.max_retries:
-            job.retry_count += 1
-            job.status = UploadStatus.PENDING
-            job.add_log(f"Retry scheduled (attempt {job.retry_count}/{job.max_retries})")
-            threading.Timer(10, start_upload_thread, args=[job_id]).start()
+        if _is_cancelled(job):
+            # Never overwrite a CANCELLED status from a worker thread.
+            job.status = UploadStatus.CANCELLED
+            job.error_message = job.error_message or "Cancelled by user"
+        else:
+            job.status = UploadStatus.FAILED
+            job.error_message = str(e)
+            job.completed_at = datetime.now().isoformat()
+            logger.error(f"Upload {job_id} error: {str(e)}")
+            _schedule_retry(job)
 
     finally:
         _update_batch_progress(job)

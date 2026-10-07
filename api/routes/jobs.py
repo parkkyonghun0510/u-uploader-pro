@@ -14,6 +14,8 @@ from api.services.uploader_service import (
     calculate_schedule_delay,
     start_upload_thread,
     broadcast_progress,
+    cancel_job_timers,
+    track_job_timer,
 )
 
 jobs_bp = Blueprint('jobs', __name__)
@@ -133,7 +135,10 @@ def create_job():
     if schedule:
         job.status = UploadStatus.SCHEDULED
         delay = calculate_schedule_delay(schedule)
-        threading.Timer(delay, start_upload_thread, args=[job.job_id]).start()
+        timer = threading.Timer(delay, start_upload_thread, args=[job.job_id])
+        timer.daemon = True
+        track_job_timer(job.job_id, timer)
+        timer.start()
     else:
         job.status = UploadStatus.PENDING
         threading.Thread(target=start_upload_thread, args=[job.job_id], daemon=True).start()
@@ -152,6 +157,10 @@ def cancel_job(job_id: str):
         from datetime import datetime
         job.status = UploadStatus.CANCELLED
         job.completed_at = datetime.now().isoformat()
+        if job.metadata is None:
+            job.metadata = {}
+        job.metadata['cancelled'] = True
+        cancel_job_timers(job_id)
         broadcast_progress(job_id)
         return jsonify({"message": "Job cancelled"})
     return jsonify({"error": "Cannot cancel job"}), 400
@@ -165,9 +174,15 @@ def retry_job(job_id: str):
     _, _, UploadStatus, _, _, _, _, _, _, _, _, _, _, _ = get_classes()
     job = queue.get_job(job_id)
     if job and job.status == UploadStatus.FAILED:
+        if job.retry_count >= job.max_retries:
+            return jsonify({"error": "Max retries reached"}), 400
         job.status = UploadStatus.PENDING
         job.retry_count += 1
         job.error_message = None
+        job.completed_at = None
+        job.progress = 0.0
+        if isinstance(job.metadata, dict):
+            job.metadata.pop('cancelled', None)
         threading.Thread(target=start_upload_thread, args=[job_id], daemon=True).start()
         return jsonify({"message": "Retry started"})
     return jsonify({"error": "Cannot retry job"}), 400

@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, List
 
-from youtube_uploader_selenium.models import YouTubeAccount, YouTubeChannel, ChannelMetadataTemplate, BulkUploadBatch, AccountType
+from youtube_uploader_selenium.models import YouTubeAccount, YouTubeChannel, ChannelMetadataTemplate, BulkUploadBatch, AccountType, ChannelStatus
 
 
 class ChannelManager:
@@ -26,6 +26,9 @@ class ChannelManager:
                 with open(self.accounts_file) as f:
                     data = json.load(f)
                     for aid, acc_data in data.items():
+                        acc_data = dict(acc_data)
+                        if isinstance(acc_data.get('account_type'), str):
+                            acc_data['account_type'] = AccountType(acc_data['account_type'])
                         acc = YouTubeAccount(account_id=aid, **acc_data)
                         self._accounts[aid] = acc
             except:
@@ -35,6 +38,11 @@ class ChannelManager:
                 with open(self.channels_file) as f:
                     data = json.load(f)
                     for cid, ch_data in data.items():
+                        ch_data = dict(ch_data)
+                        if isinstance(ch_data.get('account_type'), str):
+                            ch_data['account_type'] = AccountType(ch_data['account_type'])
+                        if isinstance(ch_data.get('status'), str):
+                            ch_data['status'] = ChannelStatus(ch_data['status'])
                         ch = YouTubeChannel(channel_id=cid, **ch_data)
                         self._channels[cid] = ch
             except:
@@ -246,9 +254,10 @@ class ChannelManager:
     # ---- Bulk Upload Batches ----
     def create_batch(self, channel_id: str, account_id: str, name: str,
                      video_paths: list, template_id: Optional[str] = None,
-                     schedule: Optional[str] = None, priority: str = "normal") -> BulkUploadBatch:
+                     schedule: Optional[str] = None, priority: str = "normal",
+                     batch_id: Optional[str] = None) -> BulkUploadBatch:
         batch = BulkUploadBatch(
-            batch_id=str(uuid.uuid4()),
+            batch_id=batch_id or str(uuid.uuid4()),
             name=name,
             channel_id=channel_id,
             account_id=account_id,
@@ -301,7 +310,7 @@ class ChannelManager:
         try:
             from youtube_uploader_selenium.queue import UploadQueue
             queue = UploadQueue()
-            all_jobs_from_queue = list(queue.jobs.values()) if hasattr(queue, 'jobs') else []
+            all_jobs_from_queue = queue.get_jobs()
         except:
             pass
         total_uploads = len(all_jobs_from_queue)
@@ -327,7 +336,7 @@ class ChannelManager:
         try:
             from youtube_uploader_selenium.queue import UploadQueue
             queue = UploadQueue()
-            jobs = list(queue.jobs.values()) if hasattr(queue, 'jobs') else []
+            jobs = queue.get_jobs()
             channel_jobs = [j for j in jobs if getattr(j, 'channel_id', None) == channel_id]
         except:
             pass

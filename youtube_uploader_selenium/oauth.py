@@ -133,7 +133,6 @@ class GoogleOAuth2:
             "expires_at": (datetime.now() + timedelta(minutes=10)).isoformat()
         }
         self._state_tokens[state] = state_meta
-        self._state_tokens[state_token] = state_meta
 
         params = {
             "client_id": self._clients[client_id]["client_id"],
@@ -151,22 +150,28 @@ class GoogleOAuth2:
     def exchange_code(self, code: str, client_id: str = None, redirect_uri: str = None, state: str = None) -> Optional[dict]:
         """Exchange authorization code for access token."""
         auth_user_id = None
+        state_meta = None
         if state:
             if state in self._state_tokens:
-                auth_user_id = self._state_tokens[state].get("auth_user_id")
-                if not client_id:
-                    client_id = self._state_tokens[state].get("client_id")
-                if not redirect_uri:
-                    redirect_uri = self._state_tokens[state].get("redirect_uri")
+                state_meta = self._state_tokens[state]
             elif ":" in state:
-                parts = state.split(":", 1)
-                prefix = parts[0]
-                auth_user_id = parts[1]
+                prefix = state.split(":", 1)[0]
                 if prefix in self._state_tokens:
-                    if not client_id:
-                        client_id = self._state_tokens[prefix].get("client_id")
-                    if not redirect_uri:
-                        redirect_uri = self._state_tokens[prefix].get("redirect_uri")
+                    state_meta = self._state_tokens[prefix]
+            if state_meta is not None:
+                # Enforce the 10-minute state-token expiry.
+                try:
+                    expires_at = datetime.fromisoformat(state_meta.get("expires_at", ""))
+                    if datetime.now() > expires_at:
+                        self._state_tokens.pop(state if state in self._state_tokens else state.split(":", 1)[0], None)
+                        return {"error": "OAuth state token expired"}
+                except (ValueError, TypeError):
+                    pass
+                auth_user_id = state_meta.get("auth_user_id")
+                if not client_id:
+                    client_id = state_meta.get("client_id")
+                if not redirect_uri:
+                    redirect_uri = state_meta.get("redirect_uri")
 
         if not client_id and self._clients:
             sorted_clients = sorted(self._clients.values(), key=lambda x: x.get("created_at", ""), reverse=True)
@@ -326,12 +331,14 @@ class OAuthManager:
 
     def save_account_token(self, account_id: str, token_data: dict):
         """Save OAuth tokens for an account."""
+        existing = self._tokens.get(account_id, {})
         self._tokens[account_id] = {
             "access_token": token_data.get("access_token"),
             "refresh_token": token_data.get("refresh_token"),
             "expires_at": token_data.get("expires_at"),
             "user_info": token_data.get("user_info"),
             "youtube_channel": token_data.get("youtube_channel"),
+            "youtube_channels": token_data.get("youtube_channels", existing.get("youtube_channels")),
             "connected_at": datetime.now().isoformat()
         }
         self._save_tokens()

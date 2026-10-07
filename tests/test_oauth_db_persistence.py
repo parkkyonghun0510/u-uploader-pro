@@ -130,7 +130,10 @@ class OAuthDatabasePersistenceTestCase(unittest.TestCase):
             self.assertTrue(any(a.get("email") == "connected@gmail.com" for a in data))
             connected_acc = next(a for a in data if a.get("email") == "connected@gmail.com")
             self.assertEqual(connected_acc.get("account_id"), "supa-acc-uuid")
-            self.assertEqual(connected_acc.get("access_token"), "ya29.valid")
+            self.assertEqual(connected_acc.get("has_access_token"), True)
+            self.assertEqual(connected_acc.get("has_refresh_token"), True)
+            self.assertNotIn("access_token", connected_acc)
+            self.assertNotIn("refresh_token", connected_acc)
             self.assertEqual(connected_acc.get("channels"), ["UC_connected"])
 
     def test_sync_channel_with_account_id_delegates_and_returns_200(self):

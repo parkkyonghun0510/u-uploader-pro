@@ -58,8 +58,8 @@ def get_accounts():
                     "google_profile_image": img,
                     "channels": sa.get('channels', []),
                     "created_at": sa.get('created_at', ''),
-                    "access_token": tok,
-                    "refresh_token": ref
+                    "has_access_token": bool(tok),
+                    "has_refresh_token": bool(ref)
                 }
                 accounts.append(acc_obj)
                 if s_email:
@@ -92,8 +92,8 @@ def get_accounts():
                 "google_profile_image": uinfo.get('picture', None),
                 "channels": [yt_ch.get('id')] if yt_ch.get('id') else [],
                 "created_at": tdata.get('connected_at', ''),
-                "access_token": tdata.get('access_token'),
-                "refresh_token": tdata.get('refresh_token')
+                "has_access_token": bool(tdata.get('access_token')),
+                "has_refresh_token": bool(tdata.get('refresh_token'))
             })
             if email:
                 existing_emails.add(email)
@@ -126,8 +126,8 @@ def get_account_detail(account_id: str):
             "google_profile_image": uinfo.get('picture', None),
             "channels": [yt_ch.get('id')] if yt_ch.get('id') else [],
             "created_at": tdata.get('connected_at', ''),
-            "access_token": tdata.get('access_token'),
-            "refresh_token": tdata.get('refresh_token')
+            "has_access_token": bool(tdata.get('access_token')),
+            "has_refresh_token": bool(tdata.get('refresh_token'))
         }), 200
 
     sm = get_supabase()
@@ -144,8 +144,8 @@ def get_account_detail(account_id: str):
                 "google_profile_image": supa_acc.get('google_profile_image'),
                 "channels": supa_acc.get('channels', []),
                 "created_at": supa_acc.get('created_at', ''),
-                "access_token": supa_acc.get('google_access_token'),
-                "refresh_token": supa_acc.get('google_refresh_token')
+                "has_access_token": bool(supa_acc.get('google_access_token')),
+                "has_refresh_token": bool(supa_acc.get('google_refresh_token'))
             }), 200
 
     return jsonify({"error": "Account not found"}), 404
@@ -750,7 +750,7 @@ def create_batch():
 
     if video_paths and channel_ids:
         try:
-            create_bulk_batch(
+            result = create_bulk_batch(
                 video_paths=video_paths,
                 channel_ids=channel_ids,
                 metadata={'template_id': data.get('template_id')} if data.get('template_id') else None,
@@ -758,6 +758,11 @@ def create_batch():
             )
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        # create_bulk_batch already registered the canonical ChannelManager batch
+        # with the same batch_id — reuse it instead of creating a duplicate record.
+        batch = cm.get_batch(result['batch_id'])
+        if batch:
+            return jsonify(batch.to_dict()), 201
 
     name = data.get('name', f"Batch {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     total_videos = data.get('total_videos', len(video_paths))
